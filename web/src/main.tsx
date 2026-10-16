@@ -5,6 +5,7 @@ import { RouterProvider } from "@tanstack/react-router";
 import { router } from "./router";
 import "./styles.css";
 import "./vault-tokens.css";
+import "./vault-shell.css";
 
 const queryClient = new QueryClient({
   defaultOptions: {

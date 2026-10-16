@@ -9,7 +9,6 @@ import {
 import {
   ApiError,
   api,
-  hasAdminAccess,
   hasScope,
   putToPresignedUrl,
 } from "../lib/api";
@@ -31,8 +30,8 @@ import {
 import { useAuth, useSession } from "../lib/auth";
 import { ConfirmAction, Dialog } from "../components/Dialog";
 import { makeToast, ToastStack, type Toast } from "../components/Toasts";
-import { FolderMark } from "../components/FolderMark";
 import { RowMenu } from "../components/RowMenu";
+import { useFolderNav, type FolderActions } from "../components/Layout";
 
 /** Objects fetched per page ("Charger plus" increments the offset). */
 const OBJECTS_PAGE_SIZE = 50;
@@ -100,6 +99,23 @@ const CONTENT_TYPE_SUGGESTIONS = [
   "audio/mpeg",
   "video/mp4",
 ];
+
+/** The "Tous les types" dropdown: exact MIME values the server matches on. */
+const TYPE_OPTIONS: { value: string; label: string }[] = [
+  { value: "", label: "Tous les types" },
+  { value: "application/pdf", label: "PDF" },
+  { value: "image/jpeg", label: "Image JPEG" },
+  { value: "image/png", label: "Image PNG" },
+  { value: "text/plain", label: "Texte brut" },
+  { value: "text/csv", label: "CSV" },
+  { value: "application/json", label: "JSON" },
+  { value: "audio/mpeg", label: "Audio MP3" },
+  { value: "video/mp4", label: "Vidéo MP4" },
+  { value: "application/octet-stream", label: "Binaire" },
+];
+
+/** Listing density: the register is a dense list by default, a card grid on demand. */
+type ViewMode = "list" | "grid";
 
 function formatBytes(size: number): string {
   if (!Number.isFinite(size) || size < 0) {
@@ -404,7 +420,21 @@ export function ObjectsPage() {
   const session = useSession();
   const queryClient = useQueryClient();
 
-  const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
+  // Folder selection lives in the shell (Layout) so its sidebar can navigate
+  // and trigger the page-owned folder flows registered below.
+  const { currentFolderId, setCurrentFolderId, registerFolderActions } =
+    useFolderNav();
+  // Latest folder handlers, delegated to by the shell-registered actions so the
+  // registration below stays mount-once while reading fresh closures.
+  const folderActionsRef = useRef<FolderActions | null>(null);
+  useEffect(() => {
+    registerFolderActions({
+      rename: (folder) => folderActionsRef.current?.rename(folder),
+      move: (folder) => folderActionsRef.current?.move(folder),
+      remove: (folder) => folderActionsRef.current?.remove(folder),
+    });
+    return () => registerFolderActions(null);
+  }, [registerFolderActions]);
   // Uploads run through the M03 transfer engine as a bounded multi-file queue.
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [queue, setQueue] = useState<QueueState>(() => emptyQueue());
@@ -447,6 +477,7 @@ export function ObjectsPage() {
   const [details, setDetails] = useState<ObjectItem | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [pendingConfirm, setPendingConfirm] = useState<{
     title: string;
     message: ReactNode;
@@ -541,15 +572,6 @@ export function ObjectsPage() {
     hasScope(session.data?.scopes, "objects:delete") &&
     hasScope(session.data?.scopes, "objects:write");
 
-  // Storage usage is only ever the real admin figure (`GET /admin/usage`,
-  // `admin:read`): no fabricated capacity is displayed for anyone else.
-  const usageQuery = useQuery({
-    queryKey: ["admin", "usage"],
-    queryFn: () => api.adminUsage(),
-    enabled: hasAdminAccess(session.data?.role),
-    retry: false,
-  });
-
   /** True while any file of the queue is transferring (blocks double submit). */
   const transferActive = queue.active > 0;
 
@@ -613,8 +635,6 @@ export function ObjectsPage() {
     return map;
   }, [tree]);
 
-  const subfolders = childrenOf.get(currentFolderId) ?? [];
-
   const breadcrumb = useMemo(() => {
     const path: FolderItem[] = [];
     let cursor = currentFolderId;
@@ -646,6 +666,13 @@ export function ObjectsPage() {
   }
 
   function invalidateLibrary() {
+    void queryClient.invalidateQueries({ queryKey: ["objects"] });
+    void queryClient.invalidateQueries({ queryKey: ["folders"] });
+  }
+
+  /** Manual refresh from the header (and the header overflow menu). */
+  function refreshLibrary() {
+    setActionError(null);
     void queryClient.invalidateQueries({ queryKey: ["objects"] });
     void queryClient.invalidateQueries({ queryKey: ["folders"] });
   }
@@ -1172,12 +1199,6 @@ export function ObjectsPage() {
   const selectableItems = items.filter(isDeletable);
   const selectableIds = new Set(selectableItems.map((item) => item.id));
 
-  // Real weight of what is currently loaded — shown as a rail readout, so the
-  // casiers column carries information instead of empty graphite.
-  const loadedBytes = items.reduce(
-    (sum, item) => sum + (item.size_bytes > 0 ? item.size_bytes : 0),
-    0,
-  );
   const currentName = currentFolderId ? byId.get(currentFolderId)?.name : null;
 
   const moveBlocked = moveTarget ? forbiddenTargets(moveTarget.id) : new Set<string>();
@@ -1392,21 +1413,142 @@ export function ObjectsPage() {
     cascade.rootName.trim() !== "" &&
     cascadeConfirmText.trim() === cascade.rootName.trim();
 
+  // The shell sidebar delegates its per-folder actions here; refreshed after
+  // every render so the handlers always read the current state and mutations.
+  useEffect(() => {
+    folderActionsRef.current = {
+      rename: (folder) => {
+        setRenameName(folder.name);
+        setRenameTarget(folder);
+      },
+      move: (folder) => setMoveTarget(folder),
+      remove: (folder) => {
+        setFolderDeleteWithContent(false);
+        setCascadeConfirmText("");
+        setPendingConfirm({
+          title: "Supprimer le dossier",
+          message: (
+            <>
+              Supprimer <strong>{folder.name}</strong> ? Un dossier contenant encore
+              des fichiers ou sous-dossiers sera refusé.
+            </>
+          ),
+          confirmLabel: "Supprimer",
+          danger: true,
+          folderCascade: canCascadeDelete,
+          onConfirm: (withContent) => {
+            if (withContent) {
+              openCascade({ id: folder.id, name: folder.name });
+            } else {
+              deleteFolderMutation.mutate({
+                id: folder.id,
+                name: folder.name,
+              });
+            }
+          },
+        });
+      },
+    };
+  });
+
   return (
     <div className="stack vault-workspace">
-      <div className="page-head">
-        <h1>Fichiers</h1>
-        <div className="head-actions">
+      <div className="vault-top">
+      <nav className="breadcrumb vault-breadcrumb" aria-label="Fil d'Ariane">
+        <button
+          type="button"
+          className={
+            currentFolderId === null
+              ? "crumb vault-crumb vault-crumb-current"
+              : "crumb vault-crumb"
+          }
+          aria-current={currentFolderId === null ? "page" : undefined}
+          onClick={() => setCurrentFolderId(null)}
+        >
+          <span className="vault-home-icon" aria-hidden="true">
+            <svg
+              viewBox="0 0 24 24"
+              width="15"
+              height="15"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.7"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M3 10.5 12 3l9 7.5" />
+              <path d="M5.5 9.5V20h13V9.5" />
+            </svg>
+          </span>
+          <span>Racine</span>
+        </button>
+        {breadcrumb.map((folder, index) => (
+          <span key={folder.id} className="crumb-item">
+            <span className="crumb-sep" aria-hidden="true">
+              &gt;
+            </span>
+            <button
+              type="button"
+              className={
+                index === breadcrumb.length - 1
+                  ? "crumb vault-crumb vault-crumb-current"
+                  : "crumb vault-crumb"
+              }
+              aria-current={index === breadcrumb.length - 1 ? "page" : undefined}
+              onClick={() => setCurrentFolderId(folder.id)}
+            >
+              {folder.name}
+            </button>
+          </span>
+        ))}
+      </nav>
+
+      <div className="page-head vault-page-head">
+        <div className="vault-page-title">
+          <h1>Fichiers</h1>
+          <p className="vault-subtitle">
+            Gérez, importez et organisez tous vos fichiers en toute sécurité.
+          </p>
+        </div>
+        <div className="head-actions vault-head-actions">
+          <RowMenu
+            label="Plus d'actions"
+            items={[
+              {
+                label: "Actualiser la liste",
+                disabled: objectsQuery.isFetching || treeQuery.isFetching,
+                onSelect: refreshLibrary,
+              },
+              {
+                label: "Créer un dossier",
+                onSelect: () => {
+                  setNewFolderName("");
+                  setNewFolderOpen(true);
+                },
+              },
+            ]}
+          />
           <button
             type="button"
-            className="btn"
+            className="btn vault-btn-refresh"
             disabled={objectsQuery.isFetching || treeQuery.isFetching}
-            onClick={() => {
-              setActionError(null);
-              void queryClient.invalidateQueries({ queryKey: ["objects"] });
-              void queryClient.invalidateQueries({ queryKey: ["folders"] });
-            }}
+            onClick={refreshLibrary}
           >
+            <span className="vault-refresh-icon" aria-hidden="true">
+              <svg
+                viewBox="0 0 24 24"
+                width="15"
+                height="15"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.7"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M20 11a8 8 0 1 0-2.3 5.6" />
+                <path d="M20 4v7h-7" />
+              </svg>
+            </span>
             {objectsQuery.isFetching ? "Actualisation…" : "Actualiser"}
           </button>
           <button
@@ -1421,36 +1563,6 @@ export function ObjectsPage() {
           </button>
         </div>
       </div>
-
-      {currentFolderId !== null ? (
-        <nav className="breadcrumb" aria-label="Fil d'Ariane">
-        <button
-          type="button"
-          className={currentFolderId === null ? "crumb crumb-current" : "crumb"}
-          aria-current={currentFolderId === null ? "page" : undefined}
-          onClick={() => setCurrentFolderId(null)}
-        >
-          Racine
-        </button>
-        {breadcrumb.map((folder, index) => (
-          <span key={folder.id} className="crumb-item">
-            <span className="crumb-sep" aria-hidden="true">
-              /
-            </span>
-            <button
-              type="button"
-              className={
-                index === breadcrumb.length - 1 ? "crumb crumb-current" : "crumb"
-              }
-              aria-current={index === breadcrumb.length - 1 ? "page" : undefined}
-              onClick={() => setCurrentFolderId(folder.id)}
-            >
-              {folder.name}
-            </button>
-          </span>
-        ))}
-        </nav>
-      ) : null}
 
       {actionError ? (
         <p role="alert" className="alert alert-error">
@@ -1508,145 +1620,12 @@ export function ObjectsPage() {
           </button>
         </p>
       ) : null}
-
-      <aside className="casiers" aria-labelledby="folders-title">
-        <h2 id="folders-title">Dossiers</h2>
-        <ul className="casier-list">
-          <li
-            className={
-              currentFolderId === null ? "casier casier-current" : "casier"
-            }
-          >
-            <button
-              type="button"
-              className="folder-open"
-              aria-current={currentFolderId === null ? "true" : undefined}
-              onClick={() => setCurrentFolderId(null)}
-            >
-              <span className="folder-icon" aria-hidden="true">
-                <FolderMark />
-              </span>
-              <span className="folder-name">Racine</span>
-            </button>
-          </li>
-        </ul>
-        {treeQuery.isError ? (
-          <p role="alert" className="alert alert-error">
-            Dossiers indisponibles.
-            <button
-              type="button"
-              className="btn btn-ghost btn-small"
-              onClick={() => void treeQuery.refetch()}
-            >
-              Réessayer
-            </button>
-          </p>
-        ) : treeQuery.isPending ? (
-          <p className="muted">Chargement…</p>
-        ) : subfolders.length === 0 ? (
-          <p className="empty">Aucun sous-dossier ici.</p>
-        ) : (
-          <ul className="casier-list">
-            {subfolders.map((folder) => (
-              <li key={folder.id} className="casier">
-                <button
-                  type="button"
-                  className="folder-open"
-                  onClick={() => setCurrentFolderId(folder.id)}
-                >
-                  <span className="folder-icon" aria-hidden="true">
-                    <FolderMark />
-                  </span>
-                  <span className="folder-name">{folder.name}</span>
-                </button>
-                <RowMenu
-                  label={`Actions pour le dossier ${folder.name}`}
-                  items={[
-                    {
-                      label: "Renommer",
-                      onSelect: () => {
-                        setRenameName(folder.name);
-                        setRenameTarget(folder);
-                      },
-                    },
-                    { label: "Déplacer", onSelect: () => setMoveTarget(folder) },
-                    {
-                      label: "Supprimer",
-                      danger: true,
-                      onSelect: () => {
-                        setFolderDeleteWithContent(false);
-                        setCascadeConfirmText("");
-                        setPendingConfirm({
-                          title: "Supprimer le dossier",
-                          message: (
-                            <>
-                              Supprimer <strong>{folder.name}</strong> ? Un dossier
-                              contenant encore des fichiers ou sous-dossiers sera
-                              refusé.
-                            </>
-                          ),
-                          confirmLabel: "Supprimer",
-                          danger: true,
-                          folderCascade: canCascadeDelete,
-                          onConfirm: (withContent) => {
-                            if (withContent) {
-                              openCascade({ id: folder.id, name: folder.name });
-                            } else {
-                              deleteFolderMutation.mutate({
-                                id: folder.id,
-                                name: folder.name,
-                              });
-                            }
-                          },
-                        });
-                      },
-                    },
-                  ]}
-                />
-              </li>
-            ))}
-          </ul>
-        )}
-        <div className="casiers-foot">
-          <dl>
-            <dt>Position</dt>
-            <dd>{currentName ?? "Racine"}</dd>
-            <dt>Poids affiché</dt>
-            <dd className="num">{formatBytes(loadedBytes)}</dd>
-            {usageQuery.data ? (
-              <>
-                <dt>Espace utilisé</dt>
-                <dd className="num">
-                  {formatBytes(usageQuery.data.totals.stored_bytes)}
-                </dd>
-              </>
-            ) : null}
-          </dl>
-          {usageQuery.data ? (
-            <p className="muted casiers-usage-note">
-              Usage réel (admin), mesuré le{" "}
-              {formatDateTime(usageQuery.data.measured_at)}.
-            </p>
-          ) : null}
-          {/* Admin-only query: surface a real failure instead of leaving the
-              readout blank (non-admins are silently skipped — no error). */}
-          {hasAdminAccess(session.data?.role) && usageQuery.isError ? (
-            <p role="alert" className="alert alert-error">
-              Espace utilisé indisponible.
-              <button
-                type="button"
-                className="btn btn-ghost btn-small"
-                onClick={() => void usageQuery.refetch()}
-              >
-                Réessayer
-              </button>
-            </p>
-          ) : null}
-        </div>
-      </aside>
+      </div>
 
       <section
-        className={`card intake${dragDepth > 0 ? " drop-active" : ""}`}
+        className={`card intake vault-dropzone${
+          dragDepth > 0 ? " drop-active" : ""
+        }${uploadError ? " drop-refused" : ""}`}
         aria-labelledby="upload-title"
         onDragEnter={(e) => {
           e.preventDefault();
@@ -1663,19 +1642,43 @@ export function ObjectsPage() {
           void handleDrop(e);
         }}
       >
-        <h2 id="upload-title">
-          Importer{currentName ? ` dans « ${currentName} »` : ""}
-        </h2>
+        <div className="vault-dropzone-main">
+          <span className="vault-cloud-icon" aria-hidden="true">
+            <svg
+              viewBox="0 0 24 24"
+              width="30"
+              height="30"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M7 18h10a4 4 0 0 0 .4-8 6 6 0 0 0-11.5 1.5A3.5 3.5 0 0 0 7 18Z" />
+              <path d="M12 11v6" />
+              <path d="m9.5 13.5 2.5-2.5 2.5 2.5" />
+            </svg>
+          </span>
+          <div className="vault-dropzone-text">
+            <p id="upload-title" className="vault-dropzone-title">
+              Importer des fichiers
+              {currentName ? ` dans « ${currentName} »` : ""}
+            </p>
+            <p className="vault-dropzone-lead">
+              Glissez-déposez vos fichiers ici ou cliquez pour sélectionner.
+            </p>
+            <p className="muted">
+              Chaque fichier est vérifié par empreinte SHA-256 avant d'être
+              déclaré disponible (taille et empreinte contrôlées par le backend
+              au moment du commit).
+            </p>
+          </div>
+        </div>
         {dragDepth > 0 ? (
           <p role="status" className="drop-hint">
             Relâchez pour importer — dossiers acceptés.
           </p>
         ) : null}
-        <p className="muted">
-          Déposez des fichiers ici ou choisissez-les. Un fichier n'est déclaré
-          disponible qu'une fois sa taille et son empreinte SHA-256 vérifiées
-          par le backend, au moment du commit.
-        </p>
         {/* Informative only: these categories describe what the intake accepts;
             they are not controls, so they stay non-interactive text. */}
         <ul className="intake-cats" aria-label="Catégories de fichiers acceptées">
@@ -1726,11 +1729,28 @@ export function ObjectsPage() {
           />
           <button
             type="button"
-            className="btn"
+            className="btn vault-btn-folder"
             disabled={transferActive}
             onClick={() => dirInputRef.current?.click()}
           >
-            Importer un dossier…
+            <span className="vault-btn-icon" aria-hidden="true">
+              <svg
+                viewBox="0 0 24 24"
+                width="15"
+                height="15"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.7"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4l2 2.5h7A1.5 1.5 0 0 1 19 9v8.5A1.5 1.5 0 0 1 17.5 19h-13A1.5 1.5 0 0 1 3 17.5Z" />
+              </svg>
+            </span>
+            Importer un dossier
+            <span className="vault-btn-caret" aria-hidden="true">
+              ▾
+            </span>
           </button>
           <button
             type="submit"
@@ -1898,26 +1918,110 @@ export function ObjectsPage() {
         ) : null}
       </section>
 
-      <section className="section" aria-labelledby="objects-title">
-        <div className="section-head">
-          <h2 id="objects-title">
+      <section className="section vault-objects-card" aria-labelledby="objects-title">
+        <div className="section-head vault-objects-head">
+          <h2 id="objects-title" className="vault-card-title">
+            <span className="vault-card-title-icon" aria-hidden="true">
+              <svg
+                viewBox="0 0 24 24"
+                width="16"
+                height="16"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.7"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4l2 2.5h7A1.5 1.5 0 0 1 19 9v8.5A1.5 1.5 0 0 1 17.5 19h-13A1.5 1.5 0 0 1 3 17.5Z" />
+              </svg>
+            </span>
             Objets{currentName ? ` — ${currentName}` : " — racine"}
           </h2>
-          <span className="muted" aria-live="polite">
-            {items.length} objet{items.length > 1 ? "s" : ""} affiché
-            {items.length > 1 ? "s" : ""}
-            {objectsQuery.hasNextPage ? " (d'autres restent à charger)" : ""}
-          </span>
+          <div className="vault-objects-tools">
+            <span className="muted vault-counter" aria-live="polite">
+              {items.length} objet{items.length > 1 ? "s" : ""} affiché
+              {items.length > 1 ? "s" : ""}
+              {objectsQuery.hasNextPage ? " (d'autres restent à charger)" : ""}
+            </span>
+            <div
+              className="vault-view-toggle"
+              role="group"
+              aria-label="Mode d'affichage"
+            >
+              <button
+                type="button"
+                className={
+                  viewMode === "list"
+                    ? "vault-view-btn vault-view-btn-active"
+                    : "vault-view-btn"
+                }
+                aria-pressed={viewMode === "list"}
+                aria-label="Affichage en liste"
+                onClick={() => setViewMode("list")}
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  width="15"
+                  height="15"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  aria-hidden="true"
+                >
+                  <path d="M4 7h16M4 12h16M4 17h16" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                className={
+                  viewMode === "grid"
+                    ? "vault-view-btn vault-view-btn-active"
+                    : "vault-view-btn"
+                }
+                aria-pressed={viewMode === "grid"}
+                aria-label="Affichage en grille"
+                onClick={() => setViewMode("grid")}
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  width="15"
+                  height="15"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  aria-hidden="true"
+                >
+                  <path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z" />
+                </svg>
+              </button>
+            </div>
+          </div>
         </div>
 
         <form
-          className="filters"
+          className="filters vault-filters"
           role="search"
           onSubmit={(e) => e.preventDefault()}
           aria-label="Recherche et filtres"
         >
-          <label className="field">
-            <span>Rechercher</span>
+          <label className="field vault-search-field">
+            <span className="visually-hidden">Rechercher</span>
+            <span className="vault-search-icon" aria-hidden="true">
+              <svg
+                viewBox="0 0 24 24"
+                width="15"
+                height="15"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.7"
+                strokeLinecap="round"
+              >
+                <circle cx="11" cy="11" r="6.5" />
+                <path d="m16 16 4 4" />
+              </svg>
+            </span>
             <input
               type="search"
               name="filter"
@@ -1925,6 +2029,20 @@ export function ObjectsPage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
+          </label>
+          <label className="field">
+            <span>Type</span>
+            <select
+              name="type"
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value)}
+            >
+              {TYPE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
           </label>
           <label className="field">
             <span>État</span>
@@ -1971,7 +2089,7 @@ export function ObjectsPage() {
           </label>
           <button
             type="button"
-            className="btn filters-toggle"
+            className="btn filters-toggle vault-filters-toggle"
             aria-expanded={advancedOpen}
             aria-controls="advanced-filters"
             onClick={() => setAdvancedOpen((value) => !value)}
@@ -2119,7 +2237,12 @@ export function ObjectsPage() {
                 />
               </p>
             ) : null}
-            <div className="ledger" role="list">
+            <div
+              className={
+                viewMode === "grid" ? "ledger vault-view-grid" : "ledger"
+              }
+              role="list"
+            >
             <div className="ledger-head">
               <span>
                 <input
@@ -2190,11 +2313,7 @@ export function ObjectsPage() {
                   </div>
                   <div className="ledger-meta">
                     <span
-                      className={`ledger-type${
-                        typeLabel(item.content_type) === "Image"
-                          ? " vault-badge-image"
-                          : ""
-                      }`}
+                      className="ledger-type vault-badge-type"
                       title={item.content_type}
                     >
                       {typeLabel(item.content_type)}

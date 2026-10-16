@@ -59,3 +59,56 @@
 .vault-dot-deleted-neutre {
   background: var(--vault-muted);
 }
+
+/* ------------------------------------------------------------------ */
+/* AURA Vault — extension « fondation thème » (S17).                   */
+/* Ajout pur : complète les jetons ci-dessus (sidebar 2e niveau,       */
+/* redistribution muted/secondaire, états sémantiques, échelle typo,   */
+/* breakpoints, anneau de focus). Aucune classe existante modifiée.    */
+/* Deuxième bloc :root : il ne fait qu'ajouter des variables et ne     */
+/* redéclare --vault-muted que pour appliquer la palette fermée S17.   */
+/* ------------------------------------------------------------------ */
+:root {
+  /* Sidebar : 2e niveau (en-têtes/sections). Le 1er niveau reste
+     --vault-sidebar (#0f172a) défini plus haut. */
+  --vault-sidebar-2: #1e293b;
+
+  /* Textes : secondaire (gris 600) et atténué (gris 400).
+     La palette fermée S17 redistribue le rôle de l'ancien --vault-muted
+     (#4b5563) : ce gris devient --vault-secondary, et --vault-muted est
+     atténué à #9ca3af. Le jeton historique est conservé ci-dessus ; sa
+     valeur effective est celle-ci (la dernière déclaration l'emporte). */
+  --vault-secondary: #4b5563;
+  --vault-muted: #9ca3af;
+
+  /* États sémantiques : danger, avertissement, succès. */
+  --vault-danger: #dc2626;
+  --vault-danger-bg: #fef2f2;
+  --vault-warn: #d97706;
+  --vault-warn-bg: #fffbeb;
+  --vault-ok: #16a34a;
+
+  /* Échelle typographique (taille / graisse). Les familles IBM Plex Sans
+     et IBM Plex Mono sont déjà chargées par styles.css (--font-ui /
+     --font-mono, self-hosted) ; ces jetons n'en fixent que le rôle. */
+  --vault-text-page: 28px/700;
+  --vault-text-section: 16px/600;
+  --vault-text-body: 14px/400;
+  --vault-text-meta: 12px/500;
+  --vault-text-table-head: 11px/600 uppercase;
+
+  /* Breakpoints (référence documentaire : les media queries n'acceptent
+     pas var() ; valeurs alignées sur les paliers du produit). */
+  --vault-bp-tablet: 1279px;
+  --vault-bp-mobile: 767px;
+
+  /* Anneau de focus : liseré blanc, consommé par .vault-focus-visible. */
+  --vault-focus: 0 0 0 2px #ffffff;
+}
+
+/* Focus « coffre » : contour accent vert + anneau blanc. */
+.vault-focus-visible {
+  outline: 2px solid var(--vault-accent);
+  outline-offset: 0;
+  box-shadow: var(--vault-focus);
+}

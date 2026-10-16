@@ -1,0 +1,567 @@
+/* AURA Vault — coquille applicative (sidebar + topbar) de la maquette
+ * « File Dashboard » (S16).
+ *
+ * Fichier d'ajout pur, préfixé `.vault-`. Il ne redéfinit ni n'écrase aucune
+ * classe de styles.css (sauf l'alignement explicite de la carte de connexion,
+ * documenté plus bas) ni aucun jeton de vault-tokens.css.
+ *
+ * Palette : TOUTES les couleurs de marque proviennent des variables
+ * `--vault-*` (accent, blue, sidebar, ink, muted, line, radii). Le blanc pur
+ * `#ffffff` est utilisé uniquement pour les surfaces neutres exigées par la
+ * maquette (topbar et champs) : aucun jeton `--vault-*` ne définit de blanc.
+ * Les transparences sont dérivées des jetons via color-mix(), jamais de
+ * nouvelles teintes.
+ */
+
+/* ------------------------------------------------------------------ */
+/* Grille de coquille : sidebar fixe + colonne de travail.            */
+/* ------------------------------------------------------------------ */
+.vault-shell {
+  display: grid;
+  grid-template-columns: 264px minmax(0, 1fr);
+  min-height: 100vh;
+  background: #ffffff;
+}
+
+.vault-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0; /* empêche tout débordement horizontal de la colonne */
+}
+
+/* ------------------------------------------------------------------ */
+/* Sidebar sombre.                                                     */
+/* ------------------------------------------------------------------ */
+.vault-sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 18px 14px 16px;
+  background: var(--vault-sidebar);
+  color: color-mix(in srgb, #ffffff 68%, var(--vault-sidebar));
+}
+
+.vault-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 2px 6px 4px;
+}
+
+.vault-brand svg {
+  flex: none;
+  color: #ffffff;
+}
+
+.vault-brand-name {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: #ffffff;
+}
+
+.vault-brand-accent {
+  color: var(--vault-accent);
+}
+
+.vault-icon-btn.vault-drawer-close {
+  display: none;
+  margin-left: auto;
+}
+
+/* -- Navigation principale ---------------------------------------- */
+.vault-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.vault-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 46px;
+  padding: 0 12px;
+  border-left: 3px solid transparent;
+  border-radius: var(--vault-radius-md);
+  color: color-mix(in srgb, #ffffff 62%, var(--vault-sidebar));
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.vault-nav-item svg {
+  flex: none;
+}
+
+.vault-nav-item:hover {
+  background: color-mix(in srgb, #ffffff 7%, transparent);
+  color: #ffffff;
+}
+
+/* Entrée active : fond clair, texte accent, indicateur vertical. */
+.vault-nav-item[aria-current="page"] {
+  background: color-mix(in srgb, #ffffff 12%, transparent);
+  color: var(--vault-accent);
+  border-left-color: var(--vault-accent);
+}
+
+/* -- Section DOSSIERS --------------------------------------------- */
+.vault-folders {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.vault-section-label {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, #ffffff 42%, var(--vault-sidebar));
+}
+
+.vault-folders-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 6px;
+}
+
+.vault-folder-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.vault-folder-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 40px;
+  padding: 0 10px;
+  border-radius: var(--vault-radius-md);
+  color: color-mix(in srgb, #ffffff 70%, var(--vault-sidebar));
+  font-size: 13.5px;
+}
+
+.vault-folder-icon {
+  display: inline-flex;
+  flex: none;
+  color: color-mix(in srgb, #ffffff 55%, var(--vault-sidebar));
+}
+
+.vault-folder-name {
+  overflow-wrap: anywhere;
+}
+
+.vault-folders-note {
+  margin: 0;
+  padding: 0 10px;
+  font-size: 12px;
+  color: color-mix(in srgb, #ffffff 48%, var(--vault-sidebar));
+}
+
+/* -- Carte stockage (bas de sidebar) ------------------------------ */
+.vault-usage {
+  margin-top: auto;
+  padding-top: 14px;
+  border-top: 1px solid color-mix(in srgb, #ffffff 10%, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.vault-usage-card {
+  border: 1px solid color-mix(in srgb, #ffffff 12%, transparent);
+  border-radius: var(--vault-radius-lg);
+  background: color-mix(in srgb, #ffffff 6%, transparent);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.vault-ring-wrap {
+  position: relative;
+  width: 92px;
+  height: 92px;
+  align-self: center;
+}
+
+.vault-ring {
+  width: 92px;
+  height: 92px;
+  transform: rotate(-90deg);
+}
+
+.vault-ring-track {
+  stroke: color-mix(in srgb, #ffffff 16%, transparent);
+}
+
+.vault-ring-value {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: #ffffff;
+}
+
+.vault-usage-note {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: color-mix(in srgb, #ffffff 52%, var(--vault-sidebar));
+}
+
+.vault-usage-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.vault-usage-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12.5px;
+  color: color-mix(in srgb, #ffffff 62%, var(--vault-sidebar));
+}
+
+.vault-usage-count {
+  font-variant-numeric: tabular-nums;
+  color: #ffffff;
+}
+
+/* Pastille d'état vert (coffre déverrouillé) — vocabulaire d'activité. */
+.vault-menu-status {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 10px;
+  font-size: 12px;
+  color: color-mix(in srgb, var(--vault-ink) 68%, transparent);
+  border-bottom: 1px solid var(--vault-line);
+  margin-bottom: 4px;
+}
+
+.vault-menu-status::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--vault-accent);
+  flex: none;
+}
+
+/* ------------------------------------------------------------------ */
+/* Topbar claire.                                                      */
+/* ------------------------------------------------------------------ */
+.vault-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  min-height: 68px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 22px;
+  background: #ffffff;
+  border-bottom: 1px solid var(--vault-line);
+}
+
+.vault-icon-btn.vault-hamburger {
+  display: none;
+}
+
+/* -- Recherche globale -------------------------------------------- */
+.vault-search {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  max-width: 540px;
+  padding: 0 10px;
+  border: 1px solid var(--vault-line);
+  border-radius: var(--vault-radius-md);
+  background: #ffffff;
+}
+
+.vault-search svg {
+  flex: none;
+  color: color-mix(in srgb, var(--vault-ink) 55%, transparent);
+}
+
+.vault-search input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font: inherit;
+  font-size: 14px;
+  color: var(--vault-ink);
+}
+
+.vault-search input::placeholder {
+  color: var(--vault-muted);
+}
+
+.vault-search:focus-within {
+  border-color: var(--vault-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--vault-accent) 22%, transparent);
+}
+
+.vault-kbd {
+  flex: none;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: color-mix(in srgb, var(--vault-ink) 60%, transparent);
+  border: 1px solid var(--vault-line);
+  border-radius: var(--vault-radius-sm);
+  padding: 2px 6px;
+}
+
+/* -- Actions topbar ----------------------------------------------- */
+.vault-topbar-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.vault-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid transparent;
+  border-radius: var(--vault-radius-md);
+  background: none;
+  color: color-mix(in srgb, var(--vault-ink) 70%, transparent);
+  cursor: pointer;
+}
+
+.vault-icon-btn:hover {
+  background: color-mix(in srgb, var(--vault-ink) 6%, transparent);
+  color: var(--vault-ink);
+}
+
+.vault-profile {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--vault-radius-md);
+  background: none;
+  cursor: pointer;
+  font: inherit;
+}
+
+.vault-profile:hover {
+  background: color-mix(in srgb, var(--vault-ink) 6%, transparent);
+}
+
+.vault-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--vault-accent);
+  color: var(--vault-accent-ink);
+  font-size: 14px;
+  font-weight: 600;
+  flex: none;
+}
+
+.vault-profile-meta {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+  text-align: left;
+}
+
+.vault-profile-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--vault-ink);
+}
+
+.vault-profile-sub {
+  font-size: 11.5px;
+  color: var(--vault-muted);
+}
+
+.vault-profile svg {
+  color: color-mix(in srgb, var(--vault-ink) 70%, transparent);
+}
+
+/* ------------------------------------------------------------------ */
+/* Focus visible — la classe utilitaire du shell.                      */
+/* ------------------------------------------------------------------ */
+.vault-focus:focus-visible {
+  outline: 2px solid var(--vault-accent);
+  outline-offset: 2px;
+}
+
+/* ------------------------------------------------------------------ */
+/* Écran étroit : la sidebar devient un tiroir.                       */
+/* ------------------------------------------------------------------ */
+.vault-scrim {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .vault-shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .vault-sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: 60;
+    width: min(300px, 86vw);
+    height: 100%;
+    transform: translateX(-100%);
+    transition: transform 180ms ease;
+  }
+
+  .vault-sidebar-open {
+    transform: translateX(0);
+  }
+
+  .vault-scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 55;
+    background: color-mix(in srgb, var(--vault-ink) 45%, transparent);
+  }
+
+  .vault-icon-btn.vault-hamburger {
+    display: inline-flex;
+  }
+
+  .vault-icon-btn.vault-drawer-close {
+    display: inline-flex;
+  }
+
+  .vault-topbar {
+    padding: 0 14px;
+    gap: 10px;
+  }
+
+  .vault-profile-meta,
+  .vault-profile svg {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vault-sidebar {
+    transition: none;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Carte de connexion : aligne le liseré sur les jetons vault.        */
+/* Ajout pur : reprend la carte blanche existante de styles.css et    */
+/* remplace seulement la couleur du liseré (graphite/ambre -> jetons  */
+/* vault-line/vault-accent). Géométrie, ombre et typographie          */
+/* inchangées, pour ne pas altérer le rendu vérifié.                  */
+/* ------------------------------------------------------------------ */
+.vault-login-card {
+  border-color: var(--vault-line);
+  border-top-color: var(--vault-accent);
+}
+
+/* ------------------------------------------------------------------ */
+/* Compléments : création de dossier en sidebar + lien topbar.         */
+/* ------------------------------------------------------------------ */
+.vault-folders-new {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 6px;
+}
+
+.vault-folders-new input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 34px;
+  padding: 0 9px;
+  border: 1px solid color-mix(in srgb, #ffffff 18%, transparent);
+  border-radius: var(--vault-radius-sm);
+  background: color-mix(in srgb, #ffffff 8%, transparent);
+  color: #ffffff;
+  font: inherit;
+  font-size: 13px;
+}
+
+.vault-folders-new input::placeholder {
+  color: color-mix(in srgb, #ffffff 45%, var(--vault-sidebar));
+}
+
+.vault-folders-new input:focus-visible {
+  outline: 2px solid var(--vault-accent);
+  outline-offset: 1px;
+}
+
+.vault-icon-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.vault-topbar-link {
+  display: inline-flex;
+  align-items: center;
+  height: 40px;
+  padding: 0 12px;
+  border-radius: var(--vault-radius-md);
+  color: var(--vault-ink);
+  font-size: 13.5px;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.vault-topbar-link:hover {
+  background: color-mix(in srgb, var(--vault-ink) 6%, transparent);
+}
+
+.vault-usage-note button {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--vault-accent);
+  font: inherit;
+  font-size: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}

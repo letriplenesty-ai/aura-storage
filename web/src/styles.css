@@ -1,6 +1,6 @@
 /* AURA Vault — direction A « Salle des coffres ».
  * Métal brossé et émail mat dans une salle de coffres éclairée : structure
- * graphite (bandeau, casiers), surface de travail en acier clair, et UNE seule
+ * graphite (bandeau, barre latérale), surface de travail en acier clair, et UNE seule
  * couleur de signalisation (ambre) réservée aux actions et aux changements
  * d'état. Aucun dégradé, aucune ombre décorative, aucun serif d'apparat.
  * Les états ne reposent jamais sur la seule couleur : pastille + libellé.
@@ -69,7 +69,6 @@
   --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
 
   --band-h: 56px;
-  --rail-w: 248px;
   --content-width: 1440px;
 }
 
@@ -111,8 +110,7 @@ h3 {
 }
 
 /* Section labels read like equipment plates, not like headings. */
-.section-head h2,
-.casiers h2 {
+.section-head h2 {
   font-size: 11.5px;
   font-weight: 500;
   font-family: var(--font-mono);
@@ -528,13 +526,14 @@ select:focus-visible {
 }
 
 /* ------------------------------------------------------------------ */
-/* The workspace: a dark casiers rail beside the light register.       */
-/* This replaces the usual "top chips + card grid" console layout.     */
+/* The workspace: one full-width column (top band, intake, register).  */
+/* The dark casiers rail is gone: the deposit and the register now     */
+/* share the whole workspace width, with no orphan 248px rail column.  */
 /* Scoped to the Fichiers page: .stack is shared with Administration.  */
 /* ------------------------------------------------------------------ */
 .vault-workspace {
   display: grid;
-  grid-template-columns: var(--rail-w) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   align-items: start;
   gap: 12px 0;
 }
@@ -545,169 +544,14 @@ select:focus-visible {
   grid-column: 1 / -1;
 }
 
-.vault-workspace > .casiers {
-  grid-column: 1;
-  grid-row: 2;
-}
-
-/* The register is the light working surface. */
+/* The register is the light working surface, now full workspace width. */
 .vault-workspace > .section[aria-labelledby="objects-title"] {
-  grid-column: 2;
+  grid-column: 1 / -1;
   grid-row: 3;
   min-width: 0;
-  margin-left: 16px;
   background: var(--steel-1);
   border: 1px solid var(--line-2);
   padding: 16px 18px 4px;
-}
-
-.casiers {
-  display: flex;
-  flex-direction: column;
-  background: var(--graphite);
-  border: 1px solid var(--graphite-3);
-  padding: 14px 0 0;
-  /* Hug the content: a stretched rail left ~54% of the column as flat void. */
-  align-self: start;
-}
-
-/* The rail carries a real readout, so it is not a black column with a tail. */
-.casiers-foot {
-  margin-top: auto;
-  border-top: 1px solid var(--graphite-2);
-  padding: 12px 16px 14px;
-}
-
-.casiers-foot dl {
-  margin: 0;
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 5px 10px;
-}
-
-.casiers-foot dt {
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: #8b96a3;
-  align-self: center;
-}
-
-.casiers-foot dd {
-  margin: 0;
-  font-family: var(--font-mono);
-  font-size: 12.5px;
-  color: #dfe5eb;
-  text-align: right;
-  overflow-wrap: anywhere;
-}
-
-.casiers h2 {
-  color: #8b96a3;
-  padding: 0 16px 10px;
-  margin: 0;
-}
-
-.casier-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-/* Each folder is a deposit slot, not a pill. */
-.casier {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 8px 0 4px;
-  border-top: 1px solid var(--graphite-2);
-  border-left: 3px solid transparent;
-  transition: border-color 120ms ease, background 120ms ease;
-}
-
-.casier:hover {
-  background: var(--graphite-2);
-  border-left-color: var(--signal);
-}
-
-/* Current location, marked the same way as an active nav bay. */
-.casier-current {
-  background: var(--graphite-2);
-  border-left-color: var(--signal);
-}
-
-.casier-current .folder-open {
-  color: #ffffff;
-}
-
-.casier-current .folder-icon {
-  color: var(--signal);
-}
-
-.casier .folder-open {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.casier .folder-icon {
-  color: #7d8b99;
-}
-
-.casier:hover .folder-icon {
-  color: var(--signal);
-}
-
-.casier .menu-trigger {
-  color: #8b96a3;
-}
-
-.casier .menu-trigger:hover,
-.casier .menu-trigger[aria-expanded="true"] {
-  background: var(--graphite-3);
-  color: #ffffff;
-}
-
-.folder-open {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  border: none;
-  background: none;
-  font: inherit;
-  font-size: 13.5px;
-  font-weight: 500;
-  color: #dfe5eb;
-  cursor: pointer;
-  text-align: left;
-  padding: 10px 6px;
-  border-radius: var(--radius-small);
-}
-
-.folder-open:hover {
-  color: #ffffff;
-}
-
-.folder-icon {
-  display: inline-flex;
-  flex: none;
-}
-
-.folder-name {
-  font-size: 13.5px;
-  overflow-wrap: anywhere;
-}
-
-/* Empty / error notes inside the rail. */
-.casiers .empty,
-.casiers .muted {
-  color: #7d8b99;
-  padding: 6px 16px;
-  font-size: 12.5px;
-}
-
-.casiers .alert {
-  margin: 6px 12px 0;
 }
 
 /* ------------------------------------------------------------------ */
@@ -977,9 +821,8 @@ select:focus-visible {
    It used to be pinned over the list, which hid rows and left the product's
    main task looking like an orphaned toast in the corner. */
 .vault-workspace > .intake {
-  grid-column: 2;
+  grid-column: 1 / -1;
   grid-row: 2;
-  margin-left: 16px;
   margin-bottom: 0;
   background: var(--steel-1);
   border: 1px solid var(--line-2);
@@ -1701,17 +1544,6 @@ p .chip {
   }
 }
 
-@keyframes rail-in {
-  from {
-    opacity: 0;
-    transform: translateX(-6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
 @media (prefers-reduced-motion: no-preference) {
   .ledger-row {
     /* `backwards` (not `both`): once the entrance ends the row keeps no
@@ -1725,16 +1557,6 @@ p .chip {
   .ledger-row:nth-child(5) { animation-delay: 96ms; }
   .ledger-row:nth-child(6) { animation-delay: 120ms; }
 
-  /* The rail answers the same way, one beat behind the register. */
-  .casier {
-    animation: rail-in 180ms ease-out backwards;
-  }
-  .casier:nth-child(1) { animation-delay: 0ms; }
-  .casier:nth-child(2) { animation-delay: 20ms; }
-  .casier:nth-child(3) { animation-delay: 40ms; }
-  .casier:nth-child(4) { animation-delay: 60ms; }
-  .casier:nth-child(5) { animation-delay: 80ms; }
-
   /* Integrity confirmed: the seal stamps down on the transfer panel. */
   .transfer .chip-ok {
     animation: seal-in 260ms cubic-bezier(0.2, 0.9, 0.3, 1);
@@ -1746,49 +1568,6 @@ p .chip {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
-  }
-}
-
-/* ------------------------------------------------------------------ */
-/* Narrow screens: the rail becomes a shelf, rows stack.              */
-/* ------------------------------------------------------------------ */
-@media (max-width: 1000px) {
-  .vault-workspace {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .vault-workspace > .casiers,
-  .vault-workspace > .intake,
-  .vault-workspace > .section[aria-labelledby="objects-title"] {
-    grid-column: 1;
-    /* Single column: the explicit rows above would make the rail span the
-       deposit and the register and paint over them. Back to DOM order. */
-    grid-row: auto;
-    margin-left: 0;
-  }
-
-  .casiers {
-    padding-bottom: 10px;
-  }
-
-  .casier-list {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    padding: 0 12px;
-  }
-
-  .casier {
-    border: 1px solid var(--graphite-3);
-    border-left-width: 3px;
-    border-radius: var(--radius-small);
-    padding: 0 4px;
-    /* Two even columns: a shelf, not a ragged row of chips. */
-    flex: 1 1 45%;
-  }
-
-  .folder-open {
-    padding: 8px 4px;
   }
 }
 
@@ -1953,11 +1732,6 @@ p .chip {
   color: var(--signal-2);
 }
 
-.casiers-usage-note {
-  margin: 8px 0 0;
-  font-size: 12px;
-}
-
 /* ------------------------------------------------------------------ */
 /* Vault S16 tokens wired into ObjectsPage.                            */
 /* Keeps the mock's accent (green primary, blue secondary, IMAGE badge, */
@@ -2104,4 +1878,570 @@ p .chip {
   display: flex;
   gap: 6px;
   justify-content: flex-end;
+}
+
+/* ==================================================================== */
+/* Vault explorer polish (S16) — append-only, scoped to .vault-* rules.  */
+/* Behaviour is untouched: this block only dresses the existing DOM.     */
+/* Colours come from the shared tokens (vault-tokens.css + :root): the   */
+/* existing hue (graphite rail, steel surfaces, amber signal) is kept.   */
+/* ==================================================================== */
+
+/* --- Top band: breadcrumb, title and messages share one full-width row. --- */
+.vault-workspace > .vault-top {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+/* --- Page title block: larger, bolder, with a one-line lede. --- */
+.vault-page-head {
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.vault-page-title {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.vault-workspace .vault-page-title h1 {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+
+.vault-subtitle {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--muted);
+  max-width: 64ch;
+}
+
+/* --- Breadcrumb: home mark, then the path. --- */
+.vault-breadcrumb {
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  gap: 6px;
+  margin: 0;
+}
+
+.vault-crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border-radius: var(--vault-radius-sm);
+  color: var(--muted);
+}
+
+.vault-crumb:hover {
+  background: var(--steel-2);
+  color: var(--ink);
+}
+
+.vault-crumb-current {
+  color: var(--vault-ink);
+  font-weight: 600;
+  cursor: default;
+}
+
+.vault-crumb-current:hover {
+  background: none;
+}
+
+.vault-home-icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--vault-accent);
+}
+
+.vault-crumb-current .vault-home-icon {
+  color: var(--vault-accent);
+}
+
+.vault-breadcrumb .crumb-sep {
+  color: var(--faint);
+}
+
+/* --- Header actions: the overflow menu reads as a peer of the buttons. --- */
+.vault-head-actions {
+  align-items: center;
+  gap: 8px;
+}
+
+.vault-head-actions .menu-trigger {
+  border: 1px solid var(--line-2);
+  background: var(--steel-1);
+  color: var(--ink-2);
+  font-size: 18px;
+  line-height: 1;
+  padding: 6px 12px;
+  border-radius: var(--vault-radius-sm);
+}
+
+.vault-head-actions .menu-trigger:hover,
+.vault-head-actions .menu-trigger[aria-expanded="true"] {
+  background: var(--steel-2);
+  color: var(--ink);
+}
+
+.vault-btn-refresh,
+.vault-btn-folder {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.vault-refresh-icon,
+.vault-btn-icon,
+.vault-btn-caret {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+}
+
+.vault-btn-caret {
+  font-size: 10px;
+  color: var(--muted);
+}
+
+/* --- Import dropzone: dashed frame, cloud mark, explicit drop states. --- */
+.vault-workspace > .vault-dropzone {
+  border: 1px dashed var(--line-2);
+  border-radius: var(--vault-radius-lg);
+  background: var(--steel-1);
+  transition: border-color 120ms ease, background 120ms ease, box-shadow 120ms ease;
+}
+
+.vault-workspace > .vault-dropzone:hover {
+  border-color: var(--signal-line);
+}
+
+.vault-dropzone-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.vault-cloud-icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--vault-accent);
+  background: var(--steel-2);
+  border-radius: 50%;
+  padding: 10px;
+}
+
+.vault-dropzone-text {
+  min-width: 0;
+}
+
+.vault-dropzone-title {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--ink);
+}
+
+.vault-dropzone-lead {
+  margin: 4px 0 0;
+  font-size: 13.5px;
+  color: var(--ink-2);
+}
+
+/* Dropping a payload over the zone: unmistakable accent frame. */
+.vault-workspace > .vault-dropzone.drop-active {
+  border-color: var(--vault-accent);
+  border-style: dashed;
+  background: var(--signal-soft);
+  outline: 2px dashed var(--vault-accent);
+  outline-offset: -7px;
+}
+
+/* A refused drop (empty files/folders, wrong payload) colours the zone. */
+.vault-workspace > .vault-dropzone.drop-refused {
+  border-color: var(--danger);
+}
+
+.vault-workspace > .vault-dropzone.drop-refused .vault-cloud-icon {
+  color: var(--danger);
+  background: var(--danger-bg);
+}
+
+/* --- Objects card: title mark, counter and list/grid switch. --- */
+.vault-objects-card {
+  border-radius: var(--vault-radius-lg);
+}
+
+.vault-objects-head {
+  align-items: center;
+}
+
+.vault-card-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.vault-card-title-icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--muted);
+}
+
+.vault-objects-tools {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.vault-counter {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.vault-view-toggle {
+  display: inline-flex;
+  border: 1px solid var(--line-2);
+  border-radius: var(--vault-radius-sm);
+  overflow: hidden;
+  background: var(--steel-1);
+}
+
+.vault-view-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 9px;
+  border: none;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.vault-view-btn + .vault-view-btn {
+  border-left: 1px solid var(--line-2);
+}
+
+.vault-view-btn:hover {
+  color: var(--ink);
+  background: var(--steel-2);
+}
+
+.vault-view-btn-active,
+.vault-view-btn-active:hover {
+  color: var(--vault-ink);
+  background: var(--steel-2);
+}
+
+/* --- Filters: search with a leading glyph; toolbar wraps before it crowds. --- */
+.vault-filters {
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.vault-search-field {
+  position: relative;
+}
+
+.vault-search-field .vault-search-icon {
+  position: absolute;
+  left: 9px;
+  bottom: 9px;
+  display: inline-flex;
+  color: var(--faint);
+  pointer-events: none;
+}
+
+.vault-search-field input {
+  padding-left: 30px;
+}
+
+/* --- Register: plate header, tabular figures, soft type badges. --- */
+.vault-workspace .ledger-head {
+  font-size: 11px;
+}
+
+.ledger-type.vault-badge-type {
+  justify-self: start;
+  width: fit-content;
+  padding: 2px 8px;
+  color: var(--vault-blue);
+  background: var(--vault-blue-soft);
+  border-radius: var(--vault-radius-sm);
+}
+
+.vault-workspace .ledger-size {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+.vault-workspace .ledger-date {
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Grid view: the same rows, laid out as touch-friendly cards. --- */
+.ledger.vault-view-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 12px;
+}
+
+.ledger.vault-view-grid .ledger-head {
+  display: none;
+}
+
+.ledger.vault-view-grid .ledger-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "name menu"
+    "meta meta";
+  gap: 8px;
+  align-items: start;
+  border: 1px solid var(--line);
+  border-left-width: 3px;
+  border-radius: var(--vault-radius-md);
+  padding: 12px;
+}
+
+.ledger.vault-view-grid .ledger-name {
+  grid-area: name;
+}
+
+.ledger.vault-view-grid .ledger-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  grid-area: meta;
+}
+
+.ledger.vault-view-grid .ledger-menu {
+  grid-area: menu;
+}
+
+.ledger.vault-view-grid .ledger-size {
+  text-align: left;
+}
+
+/* --- Messages and progress: shared tokens, never colour alone. --- */
+.vault-workspace .alert {
+  border-radius: var(--vault-radius-sm);
+}
+
+.vault-workspace .alert:not(.alert-ok):not(.alert-error) {
+  background: var(--vault-blue-soft);
+  color: var(--vault-blue);
+  border-color: var(--vault-blue-soft);
+  border-left-color: var(--vault-blue);
+}
+
+.vault-workspace .progress {
+  height: 5px;
+  border-radius: 999px;
+  background: var(--steel-2);
+}
+
+.vault-workspace .progress-bar {
+  border-radius: 999px;
+  background: var(--vault-accent);
+}
+
+/* --- Focus stays visible through the new controls. --- */
+.vault-workspace :is(button, a, input, select, [tabindex]):focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 2px;
+}
+
+/* --- No horizontal scroll from the workspace grid. --- */
+.vault-workspace {
+  max-width: 100%;
+}
+
+.vault-objects-card,
+.vault-workspace .ledger {
+  min-width: 0;
+}
+
+/* --- Toolbar wraps to multiple lines before 1280px. --- */
+@media (max-width: 1279px) {
+  .vault-filters,
+  .vault-head-actions,
+  .vault-objects-tools {
+    flex-wrap: wrap;
+  }
+}
+
+/* --- Phones: rows become compact touch cards (~44px), grid folds to one column. --- */
+@media (max-width: 768px) {
+  .vault-workspace .ledger-head {
+    display: none;
+  }
+
+  .vault-workspace .ledger-row {
+    grid-template-columns: minmax(0, 1fr) 44px;
+    grid-template-areas:
+      "name menu"
+      "meta meta";
+    row-gap: 6px;
+    align-items: start;
+    padding: 12px 6px;
+  }
+
+  .vault-workspace .ledger-name {
+    grid-area: name;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+  }
+
+  .vault-workspace .ledger-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 12px;
+    grid-area: meta;
+  }
+
+  .vault-workspace .ledger-menu {
+    grid-area: menu;
+  }
+
+  .vault-workspace .ledger-size {
+    text-align: left;
+  }
+
+  .vault-workspace .ledger-date {
+    flex-basis: 100%;
+  }
+
+  .vault-workspace .menu-trigger {
+    min-width: 44px;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .vault-head-actions .btn,
+  .vault-head-actions .menu-trigger,
+  .vault-filters .field input,
+  .vault-filters .field select,
+  .vault-filters .field button {
+    min-height: 44px;
+  }
+
+  .vault-dropzone-main {
+    flex-direction: column;
+  }
+
+  .ledger.vault-view-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Sidebar « Dossiers » — bouton dossier et item courant.             */
+/* Ajout pur : Layout.tsx rend `.vault-folder-open` (bouton brut, non   */
+/* stylé) et `.vault-folder-item-current` (item courant) sans aucun    */
+/* style propre. Le conteneur de ligne `.vault-folder-item` et l'icône */
+/* `.vault-folder-icon` sont déjà posés dans vault-shell.css : cette   */
+/* section n'ajoute QUE les états interactifs et l'état courant.        */
+/* Les couleurs proviennent exclusivement des jetons --vault-*         */
+/* (vault-tokens.css) ; les tons intermédiaires sont dérivés par        */
+/* color-mix() entre jetons, jamais d'une teinte nouvelle.              */
+/* ------------------------------------------------------------------ */
+
+/* Bouton d'ouverture de dossier : toute la largeur de la ligne, aspect */
+/* neutre au repos, fond intermédiaire au survol, 40px de haut, 8px de  */
+/* rayon. `flex: 1 1 auto` pousse le menu d'actions (RowMenu) à droite. */
+.vault-folder-open {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 40px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: var(--vault-radius-md);
+  background: transparent;
+  color: var(--vault-muted); /* texte gris clair sur la sidebar navy */
+  font: inherit;
+  font-size: 13.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.vault-folder-open:hover {
+  background: color-mix(in srgb, var(--vault-sidebar-2) 72%, var(--vault-sidebar));
+  color: var(--vault-accent-ink);
+}
+
+/* L'icône dossier suit la couleur du bouton (FolderMark hérite currentColor). */
+.vault-folder-open .vault-folder-icon {
+  color: inherit;
+}
+
+/* Dossier courant : fond légèrement plus clair, texte accent, et un    */
+/* indicateur vertical à gauche de la ligne.                            */
+.vault-folder-item-current {
+  position: relative;
+  background: var(--vault-sidebar-2);
+}
+
+.vault-folder-item-current::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 7px;
+  bottom: 7px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--vault-accent);
+}
+
+/* Le dossier courant garde le texte accent, même survolé (l'état courant */
+/* prime sur l'état hover).                                              */
+.vault-folder-item-current .vault-folder-open,
+.vault-folder-item-current .vault-folder-open:hover {
+  color: var(--vault-accent);
+}
+
+/* RowMenu : ancré à droite de la ligne. C'est un frère du bouton, jamais */
+/* un enfant : le cliquer n'ouvre donc jamais le dossier.                */
+.vault-folder-item > .menu {
+  flex: none;
+  margin-left: auto;
+}
+
+.vault-folder-item .menu-trigger {
+  color: var(--vault-muted);
+}
+
+.vault-folder-item .menu-trigger:hover,
+.vault-folder-item .menu-trigger[aria-expanded="true"] {
+  background: color-mix(in srgb, var(--vault-sidebar-2) 72%, var(--vault-sidebar));
+  color: var(--vault-accent-ink);
+}
+
+/* Focus clavier visible sur la sidebar sombre : contour accent vert + */
+/* anneau blanc (jeton --vault-focus). Spécificité supérieure à la      */
+/* règle générique `.vault-focus:focus-visible` de vault-shell.css.     */
+.vault-folder-open.vault-focus:focus-visible {
+  outline: 2px solid var(--vault-accent);
+  outline-offset: 2px;
+  box-shadow: var(--vault-focus);
 }

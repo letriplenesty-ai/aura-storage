@@ -35,7 +35,10 @@ export function LoginPage() {
 
   return (
     <div className="login-wrap">
-      <section className="login-card" aria-labelledby="login-title">
+      <section
+        className="login-card vault-login-card"
+        aria-labelledby="login-title"
+      >
         <div className="login-mark">
           <VaultMark size={34} />
         </div>
