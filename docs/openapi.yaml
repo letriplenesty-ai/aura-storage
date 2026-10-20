@@ -100,7 +100,7 @@ paths:
           name: status
           schema:
             type: string
-            enum: [pending, verifying, available, deleted, expired, failed, aborted]
+            enum: [pending, verifying, available, deleted, expired, failed, aborted, purging]
           description: Exact catalogue status.
         - in: query
           name: content_type
@@ -177,6 +177,7 @@ paths:
         "200": { description: "Upload intent (id, status, method, presigned upload_url, required headers, content_type, size_bytes, expiry). With AURA_MULTIPART_ENABLED=1 and a size at or above the threshold: upload_mode multipart, upload_url null and multipart {part_size_bytes, part_count}; parts are then requested from /multipart/parts" }
         "403": { description: Bucket not allowed / not authorised }
         "422": { description: Invalid request, disallowed content type, or empty/size over the cap }
+        "507": { description: "Storage capacity reached: the declared size would pass AURA_STORAGE_HIGH_WATERMARK of AURA_STORAGE_CAPACITY_BYTES (only when a capacity is configured)" }
         "429": { description: Too many pending uploads }
   /api/v1/objects/{oid}/commit:
     post:
@@ -464,6 +465,79 @@ paths:
         "401": { description: Authentication required }
         "403": { description: Not authorised }
         "503": { description: Audit log rewrite failed (the file itself is still readable) }
+  /api/v1/admin/integrity:
+    get:
+      summary: Periodic integrity scrub results (admin:read)
+      description: >-
+        Counts of available objects per scrub result (ok, mismatch, missing,
+        unchecked) and the objects at fault. Read-only; nothing is changed
+        automatically — a mismatch or missing object calls for a restore.
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 500, default: 100 }
+          description: Problems listed (server clamps to 1..500)
+      responses:
+        "200": { description: "interval_days, results {result: {count, oldest}}, problems" }
+        "403": { description: Not authorised }
+  /api/v1/admin/integrity/scrub:
+    post:
+      summary: Run one bounded scrub pass now (admin:write)
+      responses:
+        "200": { description: "Counts of this pass: ok, mismatch, missing, error, bytes" }
+        "403": { description: Not authorised }
+  /api/v1/admin/storage-orphans:
+    get:
+      summary: Read-only storage bytes the catalogue does not account for (admin:read)
+      description: >-
+        Keys in registered buckets with no catalogue row (no_row) or whose row is
+        aborted/expired/failed (terminal), plus unfinished multipart uploads no
+        pending row owns. Soft-deleted objects (trash) are not orphans. Anything
+        younger than AURA_ORPHAN_GRACE_SECONDS is ignored. Bounded and resumable.
+      parameters:
+        - in: query
+          name: bucket
+          schema: { type: string, maxLength: 63 }
+          description: One registered bucket; omitted = all registered buckets
+        - in: query
+          name: start_after
+          schema: { type: string, maxLength: 1024 }
+          description: Resume after this key (next_start_after of a previous call)
+        - in: query
+          name: max_keys
+          schema: { type: integer, minimum: 1, maximum: 50000, default: 5000 }
+      responses:
+        "200": { description: "grace_seconds, buckets[{bucket, scanned, orphans, orphan_bytes, stale_uploads, next_start_after}]" }
+        "403": { description: Not authorised }
+        "404": { description: Bucket not registered }
+  /api/v1/admin/storage-orphans/cleanup:
+    post:
+      summary: Remove listed orphan keys and abort listed stale uploads (admin:write, destructive)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [bucket]
+              properties:
+                bucket: { type: string, maxLength: 63 }
+                keys: { type: array, maxItems: 100, items: { type: string } }
+                uploads:
+                  type: array
+                  maxItems: 100
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required: [key, upload_id]
+                    properties:
+                      key: { type: string }
+                      upload_id: { type: string }
+      responses:
+        "200": { description: "removed, aborted_uploads, skipped[{key, reason}] — each item re-checked before acting" }
+        "403": { description: Not authorised }
+        "404": { description: Bucket not registered }
   /api/v1/admin/orphans:
     get:
       summary: Read-only orphan candidates, available rows missing at storage (admin:read)

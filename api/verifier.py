@@ -122,7 +122,10 @@ def verify_one(repo, s3ops, settings, *, now=time.time, audit=None) -> str | Non
 def run_forever(repo, s3ops, settings, *, stop: threading.Event | None = None,
                 audit=None) -> None:
     """Verify objects as they arrive; sleep briefly when there is nothing to do."""
+    from .lifecycle import resume_purges
+
     stop = stop or threading.Event()
+    last_purge_sweep = 0.0
     while not stop.is_set():
         try:
             outcome = verify_one(repo, s3ops, settings, audit=audit)
@@ -131,6 +134,13 @@ def run_forever(repo, s3ops, settings, *, stop: threading.Event | None = None,
             # the object is retried.
             outcome = None
         if outcome is None:
+            # Idle: once a minute, finish purges a crash left half-done.
+            if time.time() - last_purge_sweep >= 60:
+                last_purge_sweep = time.time()
+                try:
+                    resume_purges(repo, s3ops)
+                except Exception:
+                    pass
             stop.wait(settings.verify_poll_s)
 
 

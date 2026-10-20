@@ -75,6 +75,10 @@ Grant the minimum needed; e.g. a read-only consumer gets only `objects:read`.
 | GET | `/api/v1/admin/stats` | `admin:read` | aggregate counts, no content |
 | GET | `/api/v1/admin/audit` | `admin:read` | audit search newest-first (period/actor/action/result/space/application/request filters, `limit` 1..500 + `offset`); `total` counts window matches, `truncated` warns of older history (M07) |
 | POST | `/api/v1/admin/audit/prune` | `admin:write` | enforce `AURA_AUDIT_RETENTION_DAYS`
+| GET | `/api/v1/admin/storage-orphans` | `admin:read` | read-only: storage keys with no catalogue row or a terminal row, and stale multipart uploads; trash excluded; grace period; bounded, resumable |
+| POST | `/api/v1/admin/storage-orphans/cleanup` | `admin:write` | **destructive**: remove listed orphan keys / abort listed uploads (≤100 each), each re-checked just before acting |
+| GET | `/api/v1/admin/integrity` | `admin:read` | periodic scrub results: counts per result and objects whose bytes no longer match (`mismatch`) or are gone (`missing`); read-only |
+| POST | `/api/v1/admin/integrity/scrub` | `admin:write` | run one bounded scrub pass now (same byte budget as the periodic pass) |
 | GET | `/api/v1/admin/orphans` | `admin:read` | read-only orphan candidates (available rows missing at storage); never deletes (M07/#87) | (default 90); timestamp-less lines kept (M07) |
 | GET | `/api/v1/admin/usage` | `admin:read` | real per-space consumption (verified available bytes + counts) with `measured_at` and configured limits; optional `space_id` filter (M07) |
 | GET | `/api/v1/admin/health` | `admin:read` | supervision snapshot (api/database/storage/disk + recent errors); always 200, top-level `degraded` on dependency failure (M07) |

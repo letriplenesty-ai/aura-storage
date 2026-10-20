@@ -468,6 +468,82 @@ class Repository:
             (actor_id, idempotency_key, space_id),
         )
 
+    def storage_commitment(self) -> dict:
+        """Bytes the object store holds or has promised, across every space.
+
+        ``stored``: verified bytes still on disk (available, trash, purge in
+        progress). ``reserved``: declared sizes of uploads not yet verified
+        (pending, verifying) — counted from the moment the intent is issued.
+        """
+        row = self._one(
+            "SELECT "
+            "COALESCE(SUM(CASE WHEN status IN ('available', 'deleted', 'purging') "
+            "AND size_bytes > 0 THEN size_bytes ELSE 0 END), 0) AS stored, "
+            "COALESCE(SUM(CASE WHEN status IN ('pending', 'verifying') "
+            "AND expected_size_bytes > 0 THEN expected_size_bytes ELSE 0 END), 0) AS reserved "
+            "FROM objects"
+        )
+        return {"stored": int(row["stored"]), "reserved": int(row["reserved"])}
+    # -- periodic integrity scrub ------------------------------------------
+    def claim_scrub(self, now: int, lease_until: int, checked_before: int):
+        """Take the available object checked longest ago (never-checked first),
+        under a lease, if it is due (checked before ``checked_before``)."""
+        return self._one(
+            "UPDATE objects SET scrub_lease_until = %s WHERE id = ("
+            "SELECT id FROM objects WHERE status = 'available' "
+            "AND (scrubbed_at IS NULL OR scrubbed_at < %s) "
+            "AND (scrub_lease_until IS NULL OR scrub_lease_until < %s) "
+            "ORDER BY COALESCE(scrubbed_at, 0) ASC, created_at ASC LIMIT 1 "
+            "FOR UPDATE SKIP LOCKED) RETURNING *",
+            (lease_until, checked_before, now),
+        )
+
+    def record_scrub(self, oid: str, result: str, at: int) -> None:
+        self._run(
+            "UPDATE objects SET scrubbed_at = %s, scrub_result = %s, scrub_lease_until = NULL "
+            "WHERE id = %s",
+            (at, result, oid),
+        )
+
+    def release_scrub(self, oid: str) -> None:
+        """Give the object back unchecked (storage outage): retried next run."""
+        self._run("UPDATE objects SET scrub_lease_until = NULL WHERE id = %s", (oid,))
+
+    def integrity_summary(self) -> dict:
+        rows = self._all(
+            "SELECT COALESCE(scrub_result, 'unchecked') AS result, COUNT(*) AS n, "
+            "MIN(scrubbed_at) AS oldest FROM objects WHERE status = 'available' "
+            "GROUP BY COALESCE(scrub_result, 'unchecked')"
+        )
+        return {r["result"]: {"count": int(r["n"]), "oldest": r["oldest"]} for r in rows}
+
+    def list_integrity_problems(self, limit: int = 100):
+        return self._all(
+            "SELECT id, space_id, display_name, size_bytes, scrub_result, scrubbed_at "
+            "FROM objects WHERE status = 'available' "
+            "AND scrub_result IN ('mismatch', 'missing') "
+            "ORDER BY scrubbed_at DESC LIMIT %s",
+            (limit,),
+        )
+    def object_states_for_keys(self, bucket: str, keys: list) -> dict:
+        """Catalogue state of storage keys: ``{key: {id, status, multipart_upload_id}}``.
+
+        Keys without a row are absent from the result (storage orphans).
+        """
+        out: dict = {}
+        if not keys:
+            return out
+        for r in self._all(
+            "SELECT id, object_key, status, multipart_upload_id FROM objects "
+            "WHERE bucket = %s AND object_key = ANY(%s)",
+            (bucket, list(keys)),
+        ):
+            out[r["object_key"]] = {
+                "id": r["id"], "status": r["status"],
+                "multipart_upload_id": r["multipart_upload_id"],
+            }
+        return out
+
     def mark_available(self, oid: str, size_bytes: int, checksum_sha256: str) -> None:
         self._run(
             "UPDATE objects SET status = 'available', size_bytes = %s, checksum_sha256 = %s, updated_at = %s WHERE id = %s",
@@ -507,6 +583,14 @@ class Repository:
         self._run(
             "UPDATE objects SET status = %s, updated_at = %s WHERE id = %s",
             (status, self.now(), oid),
+        )
+
+    def list_status_before(self, status: str, cutoff: int, limit: int = 500):
+        """Rows in ``status`` not updated since ``cutoff``, oldest first."""
+        return self._all(
+            "SELECT * FROM objects WHERE status = %s AND updated_at < %s "
+            "ORDER BY updated_at ASC LIMIT %s",
+            (status, cutoff, limit),
         )
 
     def delete_object_row(self, oid: str) -> None:

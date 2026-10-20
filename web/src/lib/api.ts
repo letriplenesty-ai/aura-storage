@@ -171,6 +171,15 @@ export interface UsageResponse {
     intent_ttl: number;
     allow_empty_objects: boolean;
   };
+  /** Capacity guard; null when no capacity is configured. */
+  capacity?: {
+    capacity_bytes: number;
+    high_watermark_pct: number;
+    accept_until_bytes: number;
+    stored_bytes: number;
+    reserved_bytes: number;
+    free_for_uploads_bytes: number;
+  } | null;
   totals: {
     objects_by_status: Record<string, number>;
     available_count: number;
@@ -222,6 +231,46 @@ export interface OrphanScanResponse {
   checked: number;
   candidates: OrphanCandidate[];
   checked_at: number;
+}
+
+export interface StorageOrphan {
+  key: string;
+  size_bytes: number;
+  last_modified: number;
+  reason: "no_row" | "terminal";
+  object_id: string | null;
+}
+
+export interface StorageOrphanBucket {
+  bucket: string;
+  scanned?: number;
+  orphans?: StorageOrphan[];
+  orphan_bytes?: number;
+  stale_uploads?: Array<{ key: string; upload_id: string; initiated: number }>;
+  next_start_after?: string | null;
+  error?: string;
+}
+
+export interface StorageOrphanReport {
+  grace_seconds: number;
+  buckets: StorageOrphanBucket[];
+  checked_at: number;
+}
+
+export interface IntegrityProblem {
+  id: string;
+  space_id: string;
+  display_name: string;
+  size_bytes: number;
+  scrub_result: "mismatch" | "missing";
+  scrubbed_at: number;
+}
+
+export interface IntegrityReport {
+  interval_days: number;
+  /** Count (and oldest check) per result: ok, mismatch, missing, unchecked. */
+  results: Record<string, { count: number; oldest: number | null }>;
+  problems: IntegrityProblem[];
 }
 
 export interface ReconcileResponse {
@@ -745,6 +794,16 @@ export const api = {
     return request<OrphanScanResponse>(
       `/api/v1/admin/orphans?limit=${encodeURIComponent(String(limit))}`,
     );
+  },
+
+  /** Storage bytes the catalogue does not account for (admin:read, read-only). */
+  adminStorageOrphans(): Promise<StorageOrphanReport> {
+    return request<StorageOrphanReport>("/api/v1/admin/storage-orphans");
+  },
+
+  /** Periodic integrity scrub results (admin:read). */
+  adminIntegrity(): Promise<IntegrityReport> {
+    return request<IntegrityReport>("/api/v1/admin/integrity");
   },
 
   // --- Administration mutations (`admin:write`) ---

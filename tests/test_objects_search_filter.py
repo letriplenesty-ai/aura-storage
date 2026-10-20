@@ -331,6 +331,7 @@ def test_query_vocabulary_matches_the_repository():
     # itself (not a hard-coded set) makes a route↔builder divergence actually fail.
     assert set(OBJECT_STATUSES) == {
         "pending", "verifying", "available", "deleted", "expired", "failed", "aborted",
+        "purging",
     }
     assert set(OBJECT_STATUSES) == set(main.ObjectStatus.__args__)
     assert set(SORT_COLUMNS) == {"created_at", "display_name", "size_bytes"}

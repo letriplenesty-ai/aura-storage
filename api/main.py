@@ -78,6 +78,10 @@ def _start_verifier() -> None:
     if settings.verify_worker == "inline":
         from .verifier import start_background
         start_background(repo, s3ops, settings, audit=audit_event)
+    # Stored bytes are re-hashed periodically to catch silent corruption.
+    if settings.scrub_enabled:
+        from .scrubber import start_background as start_scrubber
+        start_scrubber(repo, s3ops, settings, audit=audit_event)
 
 
 @app.middleware("http")
@@ -224,6 +228,7 @@ Uuid4 = Annotated[str, AfterValidator(_canonical_uuid)]
 # unsupported value and let the OpenAPI document describe the accepted set.
 ObjectStatus = Literal[
     "pending", "verifying", "available", "deleted", "expired", "failed", "aborted",
+    "purging",
 ]
 ObjectSort = Literal["created_at", "display_name", "size_bytes"]
 SortOrder = Literal["asc", "desc"]
@@ -647,6 +652,7 @@ def upload_intent(
 
     if repo.count_pending(**_object_scope(principal)) >= settings.max_pending_intents:
         raise HTTPException(status_code=429, detail="too many pending uploads")
+    _check_capacity(body.size_bytes)
 
     if body.folder_id is not None:
         # A client-supplied folder must exist and be owned by the caller (#61).
@@ -705,6 +711,37 @@ def upload_intent(
         "expires_in": settings.intent_ttl, "expires_at": intent_expires_at,
         "idempotent_replay": False,
     }
+
+
+def _capacity() -> dict | None:
+    """Fill level of the object store against the configured capacity."""
+    if settings.storage_capacity_bytes <= 0:
+        return None
+    committed = repo.storage_commitment()
+    limit = settings.storage_capacity_bytes * settings.storage_high_watermark_pct // 100
+    used = committed["stored"] + committed["reserved"]
+    return {
+        "capacity_bytes": settings.storage_capacity_bytes,
+        "high_watermark_pct": settings.storage_high_watermark_pct,
+        "accept_until_bytes": limit,
+        "stored_bytes": committed["stored"],
+        "reserved_bytes": committed["reserved"],
+        "free_for_uploads_bytes": max(0, limit - used),
+    }
+
+
+def _check_capacity(size_bytes: int) -> None:
+    """Refuse (507) an upload that would push the disk past the watermark.
+
+    The declared size is reserved as soon as the intent exists, so a burst of
+    parallel imports is accounted for before any byte lands.
+    """
+    cap = _capacity()
+    if cap is not None and size_bytes > cap["free_for_uploads_bytes"]:
+        audit_event("upload-intent", None, "capacity", {
+            "size_bytes": size_bytes, "free_bytes": cap["free_for_uploads_bytes"],
+        })
+        raise HTTPException(status_code=507, detail="storage capacity reached")
 
 
 def _upload_ceiling() -> int:
@@ -1360,7 +1397,38 @@ def reconcile(limit: int = 500,
         repo, s3ops, expire_after_s=expire_after_s, limit=limit,
         multipart_expired_before=int(time.time()) - settings.intent_grace_s,
     )
+    # Finish purges a crashed process left half-done (two-phase purge).
+    from .lifecycle import resume_purges
+    out.update(resume_purges(repo, s3ops, limit=limit))
     audit_event("admin.reconcile", principal["id"], "success", out)
+    return out
+
+
+@app.get("/api/v1/admin/integrity")
+def integrity_report(limit: int = 100,
+                     principal: dict = Depends(authorize(ADMIN_READ))):
+    """Periodic scrub results: counts per result and the objects at fault.
+
+    ``mismatch`` means the stored bytes no longer match the SHA-256 verified at
+    import; ``missing`` means the storage lost the object. Both call for a
+    restore from backup; nothing is changed automatically.
+    """
+    limit = max(1, min(limit, 500))
+    summary = repo.integrity_summary()
+    problems = [_as_dict(r) for r in repo.list_integrity_problems(limit=limit)]
+    return {
+        "interval_days": settings.scrub_interval_days,
+        "results": summary,
+        "problems": problems,
+    }
+
+
+@app.post("/api/v1/admin/integrity/scrub")
+def integrity_scrub_now(principal: dict = Depends(authorize(ADMIN_WRITE))):
+    """Run one bounded scrub pass now (same byte budget as the periodic one)."""
+    from .scrubber import scrub_run
+    out = scrub_run(repo, s3ops, settings, audit=audit_event)
+    audit_event("admin.scrub", principal["id"], "success", out)
     return out
 
 
@@ -1390,6 +1458,78 @@ def list_orphan_candidates(limit: int = 100,
             })
     return {"checked": checked, "candidates": candidates,
             "checked_at": int(time.time())}
+
+
+@app.get("/api/v1/admin/storage-orphans")
+def storage_orphans(
+    bucket: str | None = Query(default=None, max_length=63),
+    start_after: str | None = Query(default=None, max_length=1024),
+    max_keys: int = 5000,
+    principal: dict = Depends(authorize(ADMIN_READ)),
+):
+    """Read-only: storage bytes the catalogue does not account for (#87).
+
+    Bounded per call (``max_keys`` per bucket) and resumable with the returned
+    ``next_start_after``. Only registered buckets are scanned.
+    """
+    from .storage_reconcile import scan_bucket, scan_multipart
+    max_keys = max(1, min(max_keys, 50_000))
+    names = [b["name"] for b in repo.list_all_buckets()]
+    if bucket is not None:
+        if bucket not in names:
+            raise HTTPException(status_code=404, detail="bucket not registered")
+        names = [bucket]
+    out = []
+    for name in names:
+        try:
+            report = scan_bucket(repo, s3ops, name, grace_s=settings.orphan_grace_s,
+                                 max_keys=max_keys, start_after=start_after)
+            report["stale_uploads"] = scan_multipart(
+                repo, s3ops, name, grace_s=settings.orphan_grace_s,
+            )
+        except Exception:
+            out.append({"bucket": name, "error": "storage unavailable"})
+            continue
+        out.append(report)
+    return {"grace_seconds": settings.orphan_grace_s, "buckets": out,
+            "checked_at": int(time.time())}
+
+
+class OrphanUploadIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    key: str = Field(min_length=1, max_length=1024)
+    upload_id: str = Field(min_length=1, max_length=1024)
+
+
+class OrphanCleanupIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    bucket: str = Field(min_length=1, max_length=63)
+    keys: list[str] = Field(default_factory=list, max_length=100)
+    uploads: list[OrphanUploadIn] = Field(default_factory=list, max_length=100)
+
+
+@app.post("/api/v1/admin/storage-orphans/cleanup")
+def storage_orphans_cleanup(
+    body: OrphanCleanupIn, principal: dict = Depends(authorize(ADMIN_WRITE)),
+):
+    """Destructive, explicit: remove listed orphan keys / abort listed uploads.
+
+    Each item is re-checked just before acting (still unaccounted for, older
+    than the grace period, inside the AURA key prefix); anything else is
+    skipped with a reason. At most 100 keys and 100 uploads per call.
+    """
+    from .storage_reconcile import remove_orphans
+    if body.bucket not in {b["name"] for b in repo.list_all_buckets()}:
+        raise HTTPException(status_code=404, detail="bucket not registered")
+    out = remove_orphans(
+        repo, s3ops, body.bucket, body.keys,
+        [u.model_dump() for u in body.uploads], grace_s=settings.orphan_grace_s,
+    )
+    audit_event("admin.storage-orphans.cleanup", principal["id"], "success", {
+        "bucket": body.bucket, "removed": len(out["removed"]),
+        "aborted_uploads": len(out["aborted_uploads"]), "skipped": len(out["skipped"]),
+    })
+    return out
 
 
 @app.get("/api/v1/admin/stats")
@@ -1505,6 +1645,8 @@ def admin_usage(
             "intent_ttl": settings.intent_ttl,
             "allow_empty_objects": settings.allow_empty_objects,
         },
+        # Capacity guard (null when AURA_STORAGE_CAPACITY_BYTES is not set).
+        "capacity": _capacity(),
         "totals": {
             "objects_by_status": totals_by_status,
             "available_count": total_available,

@@ -153,6 +153,7 @@ const STATUS_LABELS: Record<string, string> = {
   pending: "En cours",
   verifying: "Vérification…",
   deleted: "Supprimé",
+  purging: "Purge en cours",
   expired: "Expiré",
   failed: "Échec",
   aborted: "Abandonné",

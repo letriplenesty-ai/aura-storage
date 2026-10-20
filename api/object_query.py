@@ -18,6 +18,7 @@ SORT_COLUMNS = {
 # Statuses the catalogue can hold, mirroring what the API writes.
 OBJECT_STATUSES = (
     "pending", "verifying", "available", "deleted", "expired", "failed", "aborted",
+    "purging",
 )
 
 # LIKE escape character (a single backslash) and the matching SQL clause.
@@ -84,8 +85,9 @@ def build_object_where(
         # Default listing hides soft-deleted rows so a delete visibly removes
         # the file; pass status=deleted explicitly (future trash view) to see
         # them.
-        clauses.append(f"status != {ph}")
-        params.append("deleted")
+        # A purge in progress is hidden too: the object is on its way out.
+        clauses.append(f"status NOT IN ({ph}, {ph})")
+        params.extend(["deleted", "purging"])
     if content_type is not None:
         clauses.append(f"LOWER(content_type) = LOWER({ph})")
         params.append(content_type)

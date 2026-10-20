@@ -70,6 +70,11 @@ ADDED_COLUMNS = {
         ("verify_etag", "TEXT"),
         ("verify_lease_until", "INTEGER"),
         ("verify_attempts", "INTEGER DEFAULT 0"),
+        # Periodic integrity scrub: when the stored bytes were last re-hashed,
+        # what that found ('ok', 'mismatch', 'missing') and the scrub lease.
+        ("scrubbed_at", "INTEGER"),
+        ("scrub_result", "TEXT"),
+        ("scrub_lease_until", "INTEGER"),
     ],
     # #M04: a space is soft-disabled, never deleted. Pre-existing spaces are
     # backfilled to 'active' in `_seed`.

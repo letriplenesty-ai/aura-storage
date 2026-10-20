@@ -17,6 +17,9 @@ FAILED = "failed"
 EXPIRED = "expired"
 ABORTED = "aborted"
 DELETED = "deleted"
+# Purge in progress (two-phase delete, api/lifecycle.py): hidden and not
+# downloadable; a row left in this state by a crash is finished by the sweep.
+PURGING = "purging"
 
 # Conservative RFC 6838 media-type shape. Parameters (everything after ``;``)
 # are allowed but ignored for the allow-list comparison.

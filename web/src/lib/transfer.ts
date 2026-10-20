@@ -141,6 +141,9 @@ type Classification = "retryable" | "expired" | "aborted" | "fatal";
 
 function classifyHttp(status: number): Classification {
   if (status === 403) return "expired";
+  // 507: the server refused the upload because the storage is full. Retrying
+  // cannot help until space is freed.
+  if (status === 507) return "fatal";
   if (status === 408 || status === 410 || status === 425 || status === 429) return "retryable";
   if (status >= 500) return "retryable";
   return "fatal";

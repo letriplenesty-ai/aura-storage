@@ -215,6 +215,17 @@ services:
       # hashed by a worker thread in this container, outside the commit request.
       AURA_VERIFY_ASYNC_THRESHOLD_BYTES: ${AURA_VERIFY_ASYNC_THRESHOLD_BYTES:-268435456}
       AURA_VERIFY_WORKER: ${AURA_VERIFY_WORKER:-inline}
+      # Capacity guard: usable object-store bytes (0 = off) and the fill level
+      # (%) above which new uploads are refused with 507.
+      AURA_STORAGE_CAPACITY_BYTES: ${AURA_STORAGE_CAPACITY_BYTES:-0}
+      AURA_STORAGE_HIGH_WATERMARK: ${AURA_STORAGE_HIGH_WATERMARK:-90}
+      # Periodic integrity scrub (api/scrubber.py): read-only re-hash of stored
+      # objects, at least once per interval, within a byte budget per hour.
+      AURA_SCRUB_ENABLED: ${AURA_SCRUB_ENABLED:-1}
+      AURA_SCRUB_INTERVAL_DAYS: ${AURA_SCRUB_INTERVAL_DAYS:-30}
+      AURA_SCRUB_BYTES_PER_RUN: ${AURA_SCRUB_BYTES_PER_RUN:-10737418240}
+      # Storage orphans: bytes younger than this are never reported or removed.
+      AURA_ORPHAN_GRACE_SECONDS: ${AURA_ORPHAN_GRACE_SECONDS:-86400}
       # No origin/CORS allow-list here on purpose: the api has no Traefik route
       # and is reached same-origin through the app proxy (app/nginx.conf proxies
       # /api/ to this service). Browser uploads go straight to SeaweedFS via
