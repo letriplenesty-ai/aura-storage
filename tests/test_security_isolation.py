@@ -113,6 +113,7 @@ def test_cross_space_objects_are_invisible():
     assert c.get(f"/api/v1/objects/{oid}", headers=_svc(token_b)).status_code == 404
     assert c.post(f"/api/v1/objects/{oid}/commit", headers=_svc(token_b)).status_code == 404
     assert c.post(f"/api/v1/objects/{oid}/download-intent", headers=_svc(token_b)).status_code == 404
+    assert c.post(f"/api/v1/objects/{oid}/preview-intent", headers=_svc(token_b)).status_code == 404
     assert c.delete(f"/api/v1/objects/{oid}", headers=_svc(token_b)).status_code == 404
 
     # A still sees its own pending object.

@@ -293,6 +293,8 @@ export async function runTransfer(
 
 export interface QueueItem {
   id: string;
+  /** Caller-supplied identity (e.g. the upload journal fingerprint). */
+  key?: string;
   fileName: string;
   sizeBytes: number;
   state: TransferState;
@@ -382,6 +384,8 @@ export interface QueueInput {
   file: File;
   /** Target catalogue folder for this file (defaults to `options.folderId`). */
   folderId?: string | null;
+  /** Caller-supplied identity, echoed on the queue item. */
+  key?: string;
 }
 
 export function startUploadQueue(
@@ -406,6 +410,7 @@ export function startUploadQueue(
 
   interface Internal {
     id: string;
+    key: string | undefined;
     file: File;
     folderId: string | null;
     state: TransferState;
@@ -419,6 +424,7 @@ export function startUploadQueue(
     const input: QueueInput = "file" in entry ? entry : { file: entry };
     return {
       id: queueItemId(),
+      key: input.key,
       file: input.file,
       folderId: input.folderId !== undefined ? input.folderId : defaultFolder,
       state: idleTransfer(input.file),
@@ -438,6 +444,7 @@ export function startUploadQueue(
   const snapshot = (): QueueState => ({
     items: items.map((item) => ({
       id: item.id,
+      key: item.key,
       fileName: item.file.name,
       sizeBytes: item.file.size,
       state: item.state,

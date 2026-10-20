@@ -15,6 +15,14 @@ import {
 } from "../lib/api";
 import type { FolderItem, ObjectItem, ObjectQuery } from "../lib/api";
 import { emptyQueue, startUploadQueue } from "../lib/transfer";
+import {
+  addEntries,
+  clearOwner,
+  fingerprint,
+  pendingEntries,
+  removeEntries,
+  type JournalEntry,
+} from "../lib/uploadJournal";
 import type {
   QueueInput,
   QueueState,
@@ -33,6 +41,8 @@ import { ConfirmAction, Dialog } from "../components/Dialog";
 import { makeToast, ToastStack, type Toast } from "../components/Toasts";
 import { FolderMark } from "../components/FolderMark";
 import { RowMenu } from "../components/RowMenu";
+import { PreviewModal } from "../components/PreviewModal";
+import { isPreviewable } from "../lib/preview";
 
 /** Objects fetched per page ("Charger plus" increments the offset). */
 const OBJECTS_PAGE_SIZE = 50;
@@ -63,7 +73,7 @@ const STATUS_OPTIONS: { value: string; label: string }[] = [
   { value: "", label: "Tous les états" },
   { value: "available", label: "Disponible" },
   { value: "pending", label: "En cours" },
-  { value: "deleted", label: "Supprimé" },
+  { value: "deleted", label: "Corbeille" },
   { value: "expired", label: "Expiré" },
   { value: "failed", label: "Échec" },
   { value: "aborted", label: "Abandonné" },
@@ -185,6 +195,11 @@ function StatusLabel({ status }: { status: string }) {
 /** Server-side soft delete accepts only `available` or `pending` rows; anything
  * else is refused with 409. The bulk selection and the per-row "Supprimer"
  * action share this predicate so they never diverge. */
+/** In the trash and fully uploaded: the server refuses to restore anything else. */
+function isRestorable(item: ObjectItem): boolean {
+  return item.status === "deleted" && item.size_bytes >= 0;
+}
+
 function isDeletable(item: ObjectItem): boolean {
   return item.status === "available" || item.status === "pending";
 }
@@ -436,6 +451,7 @@ export function ObjectsPage() {
   const [moveTarget, setMoveTarget] = useState<FolderItem | null>(null);
   const [moveObjectTarget, setMoveObjectTarget] = useState<ObjectItem | null>(null);
   const [details, setDetails] = useState<ObjectItem | null>(null);
+  const [previewTarget, setPreviewTarget] = useState<ObjectItem | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   // The import panel opens on demand (header button) and stays open while it
@@ -547,6 +563,129 @@ export function ObjectsPage() {
 
   /** True while any file of the queue is transferring (blocks double submit). */
   const transferActive = queue.active > 0;
+
+  // -- Upload journal: resume a long import after a reload --------------------
+  const owner = session.data?.id ?? null;
+  const [resumable, setResumable] = useState<JournalEntry[]>([]);
+  const resumeFilesRef = useRef<HTMLInputElement>(null);
+  const resumeDirRef = useRef<HTMLInputElement>(null);
+  /** Journal keys already forgotten, so each settled file is removed once. */
+  const forgottenRef = useRef<Set<string>>(new Set());
+
+  function refreshResumable() {
+    if (!owner) return;
+    void pendingEntries(owner).then(setResumable);
+  }
+
+  useEffect(() => {
+    if (!transferActive) refreshResumable();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [owner, transferActive]);
+
+  // Leaving the page mid-import loses the files in flight: ask first.
+  useEffect(() => {
+    if (!transferActive) return;
+    function onBeforeUnload(event: BeforeUnloadEvent) {
+      event.preventDefault();
+      event.returnValue = "";
+    }
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [transferActive]);
+
+  // Keep the screen (and so the machine) awake while files are being sent.
+  // Best effort: unsupported browsers or a refused lock change nothing.
+  useEffect(() => {
+    if (!transferActive) return;
+    let lock: { release(): Promise<void> } | null = null;
+    let released = false;
+    const wakeLock = (navigator as Navigator & {
+      wakeLock?: { request(type: "screen"): Promise<{ release(): Promise<void> }> };
+    }).wakeLock;
+    wakeLock
+      ?.request("screen")
+      .then((acquired) => {
+        if (released) void acquired.release();
+        else lock = acquired;
+      })
+      .catch(() => undefined);
+    return () => {
+      released = true;
+      void lock?.release().catch(() => undefined);
+    };
+  }, [transferActive]);
+
+  /** Start a queue, journaling every file so the import survives a reload. */
+  function launchQueue(
+    activeCsrf: string,
+    entries: Array<{ file: File; rel: string; folderId: string | null }>,
+  ) {
+    const journal: JournalEntry[] = [];
+    const inputs: QueueInput[] = entries.map(({ file, rel, folderId }) => {
+      if (!owner) return { file, folderId };
+      const key = fingerprint(owner, rel, file);
+      forgottenRef.current.delete(key);
+      journal.push({ key, owner, rel, size: file.size, folderId });
+      return { file, folderId, key };
+    });
+    void addEntries(journal);
+    const uploadQueue = startUploadQueue(inputs, transferDeps(activeCsrf), {
+      folderId: currentFolderId,
+      onUpdate: handleQueueUpdate,
+    });
+    queueRef.current = uploadQueue;
+  }
+
+  /** Re-selected files: send only those the journal still lists. */
+  function handleResume(selected: FileList | null) {
+    if (!selected || selected.length === 0 || !owner || !csrf || transferActive) return;
+    const byKey = new Map(resumable.map((entry) => [entry.key, entry]));
+    // Same file picked through the other picker (plain files vs folder) has a
+    // different relative path: fall back to name + size + mtime.
+    const byName = new Map(
+      resumable.map((entry) => [
+        `${entry.rel.split("/").pop()}\u0000${entry.size}`,
+        entry,
+      ]),
+    );
+    const matched: Array<{ file: File; rel: string; folderId: string | null }> = [];
+    const seen = new Set<string>();
+    for (const file of Array.from(selected)) {
+      const rel = normalizeRelativePath(
+        (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name,
+      );
+      const entry =
+        byKey.get(fingerprint(owner, rel, file)) ??
+        (() => {
+          const candidate = byName.get(`${file.name}\u0000${file.size}`);
+          return candidate &&
+            candidate.key === fingerprint(owner, candidate.rel, file)
+            ? candidate
+            : undefined;
+        })();
+      if (!entry || seen.has(entry.key)) continue;
+      seen.add(entry.key);
+      matched.push({ file, rel: entry.rel, folderId: entry.folderId });
+    }
+    const ignored = selected.length - matched.length;
+    if (matched.length === 0) {
+      setUploadError(
+        "Aucun des fichiers choisis ne correspond à l'import interrompu (même nom, taille et date de modification).",
+      );
+      return;
+    }
+    setUploadError(null);
+    setNotice(
+      `Reprise de ${matched.length} fichier(s)` +
+        (ignored > 0 ? ` ; ${ignored} déjà envoyé(s) ou hors import ignoré(s).` : "."),
+    );
+    launchQueue(csrf, matched);
+  }
+
+  function forgetResumable() {
+    if (!owner) return;
+    void clearOwner(owner).then(() => setResumable([]));
+  }
 
   /** Wire the injected engine to the real API for one authenticated session. */
   function transferDeps(activeCsrf: string): TransferDeps {
@@ -784,6 +923,19 @@ export function ObjectsPage() {
     onError: (err) => reportError(err, "Suppression en masse impossible."),
   });
 
+  const restoreMutation = useMutation({
+    mutationFn: (id: string) => {
+      if (!csrf) throw new Error("Session expirée.");
+      return api.restoreObject(id, csrf);
+    },
+    onSuccess: () => {
+      setDetails(null);
+      notify("ok", "Fichier restauré depuis la corbeille.");
+      invalidateLibrary();
+    },
+    onError: (err) => reportError(err, "Restauration impossible."),
+  });
+
   const purgeMutation = useMutation({
     mutationFn: (id: string) => {
       if (!csrf) throw new Error("Session expirée.");
@@ -817,6 +969,19 @@ export function ObjectsPage() {
   /** Shared queue subscriber: mirrors state and reacts when it settles. */
   function handleQueueUpdate(next: QueueState) {
     setQueue(next);
+    // Confirmed by the server, or cancelled on purpose: nothing left to resume.
+    const settled = next.items
+      .filter(
+        (item) =>
+          item.key !== undefined &&
+          (item.state.phase === "available" || item.state.phase === "cancelled") &&
+          !forgottenRef.current.has(item.key),
+      )
+      .map((item) => item.key as string);
+    if (settled.length > 0) {
+      for (const key of settled) forgottenRef.current.add(key);
+      void removeEntries(settled);
+    }
     if (!next.finished) return;
     if (next.done > 0) {
       invalidateLibrary();
@@ -850,11 +1015,10 @@ export function ObjectsPage() {
       setUploadError("Session expirée. Reconnectez-vous.");
       return;
     }
-    const uploadQueue = startUploadQueue(pendingFiles, transferDeps(csrf), {
-      folderId: currentFolderId,
-      onUpdate: handleQueueUpdate,
-    });
-    queueRef.current = uploadQueue;
+    launchQueue(
+      csrf,
+      pendingFiles.map((file) => ({ file, rel: file.name, folderId: currentFolderId })),
+    );
     // The queue now owns the submitted files: clear them so anything dropped
     // during the transfer stays visible as a real backlog for the next run.
     setPendingFiles([]);
@@ -944,18 +1108,17 @@ export function ObjectsPage() {
       );
     }
 
-    const entries: QueueInput[] = kept.map((item) => {
-      const dir = parentDirOf(item.rel);
-      return {
-        file: item.file,
-        folderId: dir ? (folderIds.get(dir) ?? currentFolderId) : currentFolderId,
-      };
-    });
-    const uploadQueue = startUploadQueue(entries, transferDeps(csrf), {
-      folderId: currentFolderId,
-      onUpdate: handleQueueUpdate,
-    });
-    queueRef.current = uploadQueue;
+    launchQueue(
+      csrf,
+      kept.map((item) => {
+        const dir = parentDirOf(item.rel);
+        return {
+          file: item.file,
+          rel: item.rel,
+          folderId: dir ? (folderIds.get(dir) ?? currentFolderId) : currentFolderId,
+        };
+      }),
+    );
   }
 
   function handleCancelUpload() {
@@ -1180,6 +1343,7 @@ export function ObjectsPage() {
   const objectBusy =
     deleteObjectMutation.isPending ||
     purgeMutation.isPending ||
+    restoreMutation.isPending ||
     abortUploadMutation.isPending ||
     moveObjectMutation.isPending ||
     downloadingId !== null;
@@ -1593,6 +1757,58 @@ export function ObjectsPage() {
         </p>
       ) : null}
 
+      {resumable.length > 0 && !transferActive ? (
+        <div role="region" aria-label="Import interrompu" className="alert alert-warn resume-banner">
+          <p>
+            <strong>Import interrompu</strong> : {resumable.length} fichier(s) restant(s) (
+            {formatBytes(resumable.reduce((sum, entry) => sum + entry.size, 0))}). Choisissez
+            à nouveau les mêmes fichiers ou le même dossier : seuls ceux qui manquent
+            seront envoyés.
+          </p>
+          <div className="resume-actions">
+            <button
+              type="button"
+              className="btn btn-primary btn-small"
+              onClick={() => resumeFilesRef.current?.click()}
+            >
+              Reprendre avec des fichiers…
+            </button>
+            <button
+              type="button"
+              className="btn btn-small"
+              onClick={() => resumeDirRef.current?.click()}
+            >
+              Reprendre avec un dossier…
+            </button>
+            <button type="button" className="btn btn-ghost btn-small" onClick={forgetResumable}>
+              Oublier
+            </button>
+          </div>
+          <input
+            ref={resumeFilesRef}
+            type="file"
+            multiple
+            data-testid="resume-files-input"
+            className="visually-hidden"
+            onChange={(e) => {
+              handleResume(e.target.files);
+              e.target.value = "";
+            }}
+          />
+          <input
+            ref={resumeDirRef}
+            type="file"
+            multiple
+            data-testid="resume-folder-input"
+            className="visually-hidden"
+            onChange={(e) => {
+              handleResume(e.target.files);
+              e.target.value = "";
+            }}
+            {...({ webkitdirectory: "", directory: "" } as Record<string, string>)}
+          />
+        </div>
+      ) : null}
       {notice ? (
         <p role="status" className="alert alert-ok">
           {notice}
@@ -2131,6 +2347,9 @@ export function ObjectsPage() {
                       label={`Actions pour ${item.display_name}`}
                       items={[
                         { label: "Détails", onSelect: () => setDetails(item) },
+                        ...(item.status === "available" && isPreviewable(item.content_type)
+                          ? [{ label: "Aperçu", onSelect: () => setPreviewTarget(item) }]
+                          : []),
                         {
                           label: "Télécharger",
                           disabled:
@@ -2169,6 +2388,15 @@ export function ObjectsPage() {
                                     onConfirm: () =>
                                       abortUploadMutation.mutate(item.id),
                                   }),
+                              },
+                            ]
+                          : []),
+                        ...(isRestorable(item)
+                          ? [
+                              {
+                                label: "Restaurer",
+                                disabled: objectBusy,
+                                onSelect: () => restoreMutation.mutate(item.id),
                               },
                             ]
                           : []),
@@ -2295,6 +2523,15 @@ export function ObjectsPage() {
             </span>
           </div>
           <div className="drawer-actions">
+            {details.status === "available" && isPreviewable(details.content_type) ? (
+              <button
+                type="button"
+                className="btn"
+                onClick={() => setPreviewTarget(details)}
+              >
+                Aperçu
+              </button>
+            ) : null}
             <button
               type="button"
               className="btn btn-primary"
@@ -2303,6 +2540,16 @@ export function ObjectsPage() {
             >
               {downloadingId === details.id ? "…" : "Télécharger"}
             </button>
+            {isRestorable(details) ? (
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={objectBusy}
+                onClick={() => restoreMutation.mutate(details.id)}
+              >
+                Restaurer
+              </button>
+            ) : null}
             <button
               type="button"
               className="btn"
@@ -2767,6 +3014,15 @@ export function ObjectsPage() {
         </section>
       ) : null}
 
+      <PreviewModal
+        item={previewTarget}
+        csrf={csrf}
+        onClose={() => setPreviewTarget(null)}
+        onDownload={(item) => {
+          setPreviewTarget(null);
+          void handleDownload(item);
+        }}
+      />
       <ToastStack toasts={toasts} onDismiss={dismissToast} />
 
       {/* Recursive (cascade) folder deletion: real listing, typed confirmation,

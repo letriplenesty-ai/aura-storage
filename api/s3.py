@@ -86,9 +86,25 @@ def is_valid_bucket_name(name: str) -> bool:
     return True
 
 
-def presigned_get(client, bucket: str, key: str, expires: int) -> str:
+def presigned_get(client, bucket: str, key: str, expires: int,
+                  content_disposition: str | None = None,
+                  content_type: str | None = None) -> str:
+    """Presign a GET, optionally overriding the response headers.
+
+    ``content_disposition`` (``inline`` to render in the browser, ``attachment``
+    to force a download) and ``content_type`` map to the get_object
+    ``ResponseContentDisposition`` / ``ResponseContentType`` parameters, which
+    S3 echoes as response headers on the presigned request. Both default to
+    ``None`` so an existing caller (download-intent) produces exactly the URL it
+    did before — no response override is added unless one is requested.
+    """
+    params = {"Bucket": bucket, "Key": key}
+    if content_disposition is not None:
+        params["ResponseContentDisposition"] = content_disposition
+    if content_type is not None:
+        params["ResponseContentType"] = content_type
     return client.generate_presigned_url(
-        "get_object", Params={"Bucket": bucket, "Key": key}, ExpiresIn=expires
+        "get_object", Params=params, ExpiresIn=expires
     )
 
 

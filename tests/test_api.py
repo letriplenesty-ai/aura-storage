@@ -343,6 +343,43 @@ def test_soft_delete_and_purge(monkeypatch):
     assert c.post(f"/api/v1/objects/{oid}/purge", headers=headers).status_code == 404
 
 
+def test_restore_brings_a_soft_deleted_object_back(monkeypatch):
+    c, headers = authed_client()
+    oid = c.post(
+        "/api/v1/objects/upload-intents",
+        json={"bucket": "aura", "display_name": "trash-me.txt", "size_bytes": 1},
+        headers=headers,
+    ).json()["id"]
+    # An object that is not in the trash cannot be "restored".
+    assert c.post(f"/api/v1/objects/{oid}/restore", headers=headers).status_code == 409
+
+    # Simulate a committed object, then soft-delete and restore it.
+    main.repo.mark_available(oid, 1, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+    assert c.delete(f"/api/v1/objects/{oid}", headers=headers).status_code == 200
+    trash = c.get("/api/v1/objects?status=deleted", headers=headers).json()["items"]
+    assert [i["id"] for i in trash] == [oid]
+
+    r = c.post(f"/api/v1/objects/{oid}/restore", headers=headers)
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "available"
+    assert c.get("/api/v1/objects?status=deleted", headers=headers).json()["items"] == []
+    # Restoring twice is refused: it is no longer in the trash.
+    assert c.post(f"/api/v1/objects/{oid}/restore", headers=headers).status_code == 409
+
+
+def test_restore_refuses_an_intent_deleted_before_its_upload():
+    c, headers = authed_client()
+    oid = c.post(
+        "/api/v1/objects/upload-intents",
+        json={"bucket": "aura", "display_name": "never-uploaded.txt", "size_bytes": 1},
+        headers=headers,
+    ).json()["id"]
+    assert c.delete(f"/api/v1/objects/{oid}", headers=headers).status_code == 200
+    r = c.post(f"/api/v1/objects/{oid}/restore", headers=headers)
+    assert r.status_code == 409
+    assert "never uploaded" in r.json()["detail"]
+
+
 def test_reconcile_expires_stale_pending():
     from api.lifecycle import reconcile_pending
 

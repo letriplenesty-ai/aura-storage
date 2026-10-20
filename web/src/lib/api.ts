@@ -280,6 +280,17 @@ export interface CommitResponse {
   checksum_algorithm?: string;
 }
 
+export interface PreviewIntentResponse {
+  id: string;
+  preview_url: string;
+  method: string;
+  expires_in: number;
+  expires_at: number | null;
+  display_name: string;
+  content_type: string;
+  size_bytes: number;
+}
+
 export interface DownloadIntentResponse {
   id: string;
   download_url: string;
@@ -550,6 +561,14 @@ export const api = {
     );
   },
 
+  /** Short-lived inline GET for images, audio and PDF (415 for other types). */
+  createPreviewIntent(id: string, csrf: string): Promise<PreviewIntentResponse> {
+    return request<PreviewIntentResponse>(
+      `/api/v1/objects/${encodeURIComponent(id)}/preview-intent`,
+      { method: "POST", csrf },
+    );
+  },
+
   // --- Object lifecycle ---
   /** File an object into a folder, or unfile it (`folderId` null = root). */
   moveObject(
@@ -569,6 +588,14 @@ export const api = {
     return request<{ id: string; status: string }>(
       `/api/v1/objects/${encodeURIComponent(id)}`,
       { method: "DELETE", csrf },
+    );
+  },
+
+  /** Undo a soft delete (objects:delete); 409 if it is not in the trash. */
+  restoreObject(id: string, csrf: string): Promise<ObjectItem> {
+    return request<ObjectItem>(
+      `/api/v1/objects/${encodeURIComponent(id)}/restore`,
+      { method: "POST", csrf },
     );
   },
 
