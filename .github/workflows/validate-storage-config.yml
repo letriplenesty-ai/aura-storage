@@ -86,7 +86,7 @@ jobs:
         run: PGPASSWORD=ci-dummy-pg-password psql -h 127.0.0.1 -U aura -d aura -c "CREATE DATABASE aura_parity"
       - name: Run API tests on PostgreSQL
         run: |
-          python3 -m pip install -r api/requirements.txt
+          python3 -m pip install -r api/requirements-dev.txt
           AURA_API_BACKEND=postgres \
           AURA_API_DSN=postgresql://aura:ci-dummy-pg-password@127.0.0.1:5432/aura \
           AURA_TEST_PG_DSN=postgresql://aura:ci-dummy-pg-password@127.0.0.1:5432/aura_parity \
